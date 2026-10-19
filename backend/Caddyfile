@@ -1,0 +1,14 @@
+# Caddy terminates TLS for the API. Cloudflare Pages serves the frontend over
+# HTTPS, so the browser blocks any plain-http API call as mixed content - the
+# API must be https, which means it needs a hostname and a certificate.
+#
+# Replace the hostname with your own. A free DuckDNS subdomain works and never
+# expires; so does a domain you own. Caddy gets and renews the Let's Encrypt
+# certificate on its own.
+#
+# Install: sudo cp Caddyfile /etc/caddy/Caddyfile && sudo systemctl reload caddy
+
+zarikhata-api.duckdns.org {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:4000
+}
