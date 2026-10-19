@@ -1,0 +1,22 @@
+services:
+  # Local development database. This mirrors what the Electron app's bundled
+  # portable MySQL looks like on an end user's PC (see desktop/src/localMysql.ts)
+  # — a plain, single MySQL instance with no special configuration, since
+  # this is a single-machine, offline-only application with no cloud
+  # counterpart to keep ids disjoint from.
+  mysql:
+    image: mysql:8.0
+    container_name: zarikhata-mysql-dev
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: zarikhata
+      MYSQL_ROOT_PASSWORD: zarikhata_dev_root
+      MYSQL_USER: zarikhata
+      MYSQL_PASSWORD: zarikhata_dev_password
+    ports:
+      - "3306:3306"
+    volumes:
+      - zarikhata-mysql-data:/var/lib/mysql
+
+volumes:
+  zarikhata-mysql-data:
