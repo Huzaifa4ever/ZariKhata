@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ZariKhata</title>
+    <meta name="description" content="Your Agro Business, Accounts & Stock in One Place." />
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <meta name="theme-color" content="#0a6e42" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#090d0b" media="(prefers-color-scheme: dark)" />
+    <script>
+      // Resolve the theme before first paint, otherwise a dark-mode user gets
+      // a white flash while React boots. ThemeContext takes over from here.
+      (function () {
+        try {
+          var saved = localStorage.getItem('zarikhata.theme');
+          var dark =
+            saved === 'dark' ||
+            ((!saved || saved === 'system') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          var theme = dark ? 'dark' : 'light';
+          document.documentElement.dataset.theme = theme;
+          document.documentElement.style.colorScheme = theme;
+        } catch (e) {
+          /* storage blocked — the light default in the markup stands */
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
