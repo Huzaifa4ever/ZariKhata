@@ -1,0 +1,3 @@
+# Cloudflare Pages SPA fallback: the app uses real URLs (/sales, /reports), so
+# a hard refresh or a shared link must still serve index.html rather than 404.
+/*  /index.html  200
