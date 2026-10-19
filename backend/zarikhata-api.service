@@ -1,0 +1,29 @@
+# systemd unit for the ZariKhata API on an Oracle Always Free VM.
+# Install: sudo cp zarikhata-api.service /etc/systemd/system/
+#          sudo systemctl daemon-reload && sudo systemctl enable --now zarikhata-api
+[Unit]
+Description=ZariKhata API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=zarikhata
+WorkingDirectory=/opt/zarikhata/backend
+EnvironmentFile=/opt/zarikhata/backend/.env
+ExecStart=/usr/bin/node dist/server.js
+Restart=always
+RestartSec=5
+# Survive an OOM-kill or a crash loop without manual intervention; the Always
+# Free VM is small and a bad query can take the process down.
+StartLimitBurst=0
+
+# Hardening: the API only ever needs to read its own directory.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/zarikhata/backend
+
+[Install]
+WantedBy=multi-user.target
