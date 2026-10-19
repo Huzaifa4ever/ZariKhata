@@ -1,0 +1,47 @@
+# ---- dependencies & build output ----
+node_modules/
+dist/
+build/
+release/
+coverage/
+.vite/
+
+# ---- secrets: never commit real credentials ----
+# `.env` with no slash matches at any depth, so backend/.env is covered too.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+# Personal credential notes kept beside the project.
+link-and-pass*
+*credential*
+*secret*
+*password*
+
+# ---- local data & backups ----
+backups/
+*.sql
+*.sql.gz
+*.dump
+# ...but Prisma migrations are source, not data dumps. Without these the
+# server has nothing for `prisma migrate deploy` to apply.
+!backend/prisma/migrations/**/*.sql
+backend/prisma/dev.db
+backend/prisma/dev.db-journal
+
+# ---- tooling & editors ----
+.claude/
+.vscode/
+.idea/
+*.log
+.DS_Store
+Thumbs.db
+
+# ---- docs ----
+# Only the top-level README ships. Everything else stays local.
+*.md
+!/README.md
