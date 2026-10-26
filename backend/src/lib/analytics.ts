@@ -164,3 +164,159 @@ export async function getTotalCashAndBank(businessId: number) {
   }
   return total;
 }
+
+/**
+ * The debit/credit picture for the dashboard.
+ *
+ * Two different things get called "debit" and "credit" in a shop, so both are
+ * returned separately and the UI labels them:
+ *
+ *   party ledger - debit raises what a farmer owes us or what we owe a
+ *                  supplier; credit settles it. This is the bookkeeping sense.
+ *   cash & bank  - credit is money arriving in an account, debit is money
+ *                  leaving it.
+ *
+ * Receivables and payables are the plain-language answers derived from the
+ * first: who owes money and to whom. They are summed per party rather than
+ * netted across all of them, so one farmer sitting in credit cannot quietly
+ * cancel out another farmer's debt and understate what is out on the street.
+ */
+export async function getDebitCreditSummary(businessId: number) {
+  const [farmers, suppliers, accounts, farmerEntries, supplierEntries, accountTxns] = await Promise.all([
+    prisma.farmer.findMany({ where: { businessId, isActive: true }, select: { id: true, name: true, openingBalance: true } }),
+    prisma.supplier.findMany({ where: { businessId, isActive: true }, select: { id: true, name: true, openingBalance: true } }),
+    prisma.account.findMany({
+      where: { businessId, isActive: true },
+      select: { id: true, name: true, type: true, openingBalance: true },
+      orderBy: { name: 'asc' },
+    }),
+    prisma.ledgerEntry.groupBy({
+      by: ['farmerId', 'direction'],
+      where: { businessId, partyType: 'FARMER' },
+      _sum: { amount: true },
+    }),
+    prisma.ledgerEntry.groupBy({
+      by: ['supplierId', 'direction'],
+      where: { businessId, partyType: 'SUPPLIER' },
+      _sum: { amount: true },
+    }),
+    prisma.accountTransaction.groupBy({ by: ['accountId', 'direction'], where: { businessId }, _sum: { amount: true } }),
+  ]);
+
+  type Sides = { debit: Prisma.Decimal; credit: Prisma.Decimal };
+  function fold<K extends string>(
+    rows: Array<{ direction: string; _sum: { amount: unknown } }>,
+    keyOf: (row: never) => number | null,
+  ): Map<number, Sides> {
+    const map = new Map<number, Sides>();
+    for (const row of rows) {
+      const key = keyOf(row as never);
+      if (key === null) continue;
+      const side = map.get(key) ?? { debit: new Decimal(0), credit: new Decimal(0) };
+      const amount = new Decimal((row._sum.amount as { toString(): string })?.toString() ?? 0);
+      if (row.direction === 'DEBIT') side.debit = side.debit.plus(amount);
+      else side.credit = side.credit.plus(amount);
+      map.set(key, side);
+    }
+    return map as Map<number, Sides>;
+  }
+
+  const byFarmer = fold(farmerEntries, (r: { farmerId: number | null }) => r.farmerId);
+  const bySupplier = fold(supplierEntries, (r: { supplierId: number | null }) => r.supplierId);
+  const byAccount = fold(accountTxns, (r: { accountId: number }) => r.accountId);
+
+  const zero = () => ({ debit: new Decimal(0), credit: new Decimal(0) });
+
+  // --- farmers: positive balance is owed to us, negative is credit on account
+  let receivables = new Decimal(0);
+  let farmerAdvances = new Decimal(0);
+  let farmerDebit = new Decimal(0);
+  let farmerCredit = new Decimal(0);
+  const owing: Array<{ id: number; name: string; amount: string }> = [];
+  for (const farmer of farmers) {
+    const sides = byFarmer.get(farmer.id) ?? zero();
+    farmerDebit = farmerDebit.plus(sides.debit);
+    farmerCredit = farmerCredit.plus(sides.credit);
+    const balance = new Decimal(farmer.openingBalance.toString()).plus(sides.debit).minus(sides.credit);
+    if (balance.gt(0)) {
+      receivables = receivables.plus(balance);
+      owing.push({ id: farmer.id, name: farmer.name, amount: balance.toFixed(2) });
+    } else if (balance.lt(0)) {
+      farmerAdvances = farmerAdvances.plus(balance.abs());
+    }
+  }
+
+  // --- suppliers: positive balance is owed by us, negative is advance paid
+  let payables = new Decimal(0);
+  let supplierAdvances = new Decimal(0);
+  let supplierDebit = new Decimal(0);
+  let supplierCredit = new Decimal(0);
+  const owed: Array<{ id: number; name: string; amount: string }> = [];
+  for (const supplier of suppliers) {
+    const sides = bySupplier.get(supplier.id) ?? zero();
+    supplierDebit = supplierDebit.plus(sides.debit);
+    supplierCredit = supplierCredit.plus(sides.credit);
+    const balance = new Decimal(supplier.openingBalance.toString()).plus(sides.debit).minus(sides.credit);
+    if (balance.gt(0)) {
+      payables = payables.plus(balance);
+      owed.push({ id: supplier.id, name: supplier.name, amount: balance.toFixed(2) });
+    } else if (balance.lt(0)) {
+      supplierAdvances = supplierAdvances.plus(balance.abs());
+    }
+  }
+
+  // --- cash and bank
+  let moneyIn = new Decimal(0);
+  let moneyOut = new Decimal(0);
+  const accountRows = accounts.map((account) => {
+    const sides = byAccount.get(account.id) ?? zero();
+    moneyIn = moneyIn.plus(sides.credit);
+    moneyOut = moneyOut.plus(sides.debit);
+    const balance = new Decimal(account.openingBalance.toString()).plus(sides.credit).minus(sides.debit);
+    return {
+      id: account.id,
+      name: account.name,
+      type: account.type,
+      moneyIn: sides.credit.toFixed(2),
+      moneyOut: sides.debit.toFixed(2),
+      balance: balance.toFixed(2),
+    };
+  });
+
+  const byAmount = (a: { amount: string }, b: { amount: string }) => Number(b.amount) - Number(a.amount);
+
+  return {
+    receivables: {
+      total: receivables.toFixed(2),
+      count: owing.length,
+      parties: owing.sort(byAmount).slice(0, 6),
+      advances: farmerAdvances.toFixed(2),
+    },
+    payables: {
+      total: payables.toFixed(2),
+      count: owed.length,
+      parties: owed.sort(byAmount).slice(0, 6),
+      advances: supplierAdvances.toFixed(2),
+    },
+    ledger: {
+      farmerDebit: farmerDebit.toFixed(2),
+      farmerCredit: farmerCredit.toFixed(2),
+      supplierDebit: supplierDebit.toFixed(2),
+      supplierCredit: supplierCredit.toFixed(2),
+      totalDebit: farmerDebit.plus(supplierDebit).toFixed(2),
+      totalCredit: farmerCredit.plus(supplierCredit).toFixed(2),
+    },
+    accounts: accountRows,
+    money: {
+      in: moneyIn.toFixed(2),
+      out: moneyOut.toFixed(2),
+      net: moneyIn.minus(moneyOut).toFixed(2),
+    },
+    /** Net worth on paper: what we hold, plus what is owed to us, less what we owe. */
+    netPosition: accountRows
+      .reduce((sum, a) => sum.plus(a.balance), new Decimal(0))
+      .plus(receivables)
+      .minus(payables)
+      .toFixed(2),
+  };
+}
