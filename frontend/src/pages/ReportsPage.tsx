@@ -48,25 +48,39 @@ const PERIODS = [
 
 /* ───────────────────────── report catalogue ───────────────────────── */
 
+/**
+ * A report column, plus the one thing the printed version does not need: which
+ * cells are names you can click through to the underlying record.
+ */
+type ReportColumn = PrintColumn & {
+  /**
+   * Marks this cell as a party name. `idKey` is the field on the row holding
+   * that party's id - a row whose id is missing or null stays plain text,
+   * which is what keeps walk-in customers unclickable.
+   */
+  party?: { kind: PartyKind; idKey: string };
+};
+
 interface ReportDef {
   key: string;
   label: string;
   blurb: string;
   group: string;
-  columns: PrintColumn[];
+  columns: ReportColumn[];
   /** Reports whose numbers don't depend on a date range. */
   dateless?: boolean;
   csv?: boolean;
   summary?: (d: Record<string, unknown>) => Array<{ label: string; value: string; highlight?: boolean }>;
 }
 
-const MONEY = (key: string, label: string): PrintColumn => ({ key, label, money: true });
+const MONEY = (key: string, label: string): ReportColumn => ({ key, label, money: true });
 
 const REPORTS: ReportDef[] = [
   {
     key: 'sales', label: 'Sales', blurb: 'Every invoice raised in the period.', group: 'Trade', csv: true,
     columns: [
-      { key: 'farmer', label: 'Farmer' }, { key: 'date', label: 'Date' },
+      { key: 'farmer', label: 'Farmer', party: { kind: 'FARMER', idKey: 'farmerId' } },
+      { key: 'date', label: 'Date' },
       { key: 'invoiceNumber', label: 'Ref', muted: true }, MONEY('total', 'Total'),
       MONEY('amountPaid', 'Paid'), MONEY('balance', 'Balance'),
       { key: 'status', label: 'Status', align: 'center' },
@@ -76,7 +90,8 @@ const REPORTS: ReportDef[] = [
   {
     key: 'purchases', label: 'Purchases', blurb: 'Stock bought from companies and suppliers.', group: 'Trade', csv: true,
     columns: [
-      { key: 'supplier', label: 'Supplier' }, { key: 'date', label: 'Date' },
+      { key: 'supplier', label: 'Supplier', party: { kind: 'SUPPLIER', idKey: 'supplierId' } },
+      { key: 'date', label: 'Date' },
       { key: 'invoiceNumber', label: 'Ref', muted: true }, MONEY('total', 'Total'),
       MONEY('amountPaid', 'Paid'), MONEY('balance', 'Balance'),
       { key: 'status', label: 'Status', align: 'center' },
@@ -106,13 +121,21 @@ const REPORTS: ReportDef[] = [
   {
     key: 'farmer-receivables', label: 'Farmer Receivables', blurb: 'Who owes you, and how much.',
     group: 'Money', dateless: true, csv: true,
-    columns: [{ key: 'name', label: 'Farmer' }, { key: 'phone', label: 'Phone' }, MONEY('balance', 'Balance due')],
+    columns: [
+      { key: 'name', label: 'Farmer', party: { kind: 'FARMER', idKey: 'id' } },
+      { key: 'phone', label: 'Phone' },
+      MONEY('balance', 'Balance due'),
+    ],
     summary: (d) => [{ label: 'Farmers owing', value: String(d.count ?? 0), highlight: true }],
   },
   {
     key: 'supplier-payables', label: 'Supplier Payables', blurb: 'Who you owe, and how much.',
     group: 'Money', dateless: true, csv: true,
-    columns: [{ key: 'name', label: 'Supplier' }, { key: 'phone', label: 'Phone' }, MONEY('balance', 'Balance due')],
+    columns: [
+      { key: 'name', label: 'Supplier', party: { kind: 'SUPPLIER', idKey: 'id' } },
+      { key: 'phone', label: 'Phone' },
+      MONEY('balance', 'Balance due'),
+    ],
     summary: (d) => [{ label: 'Suppliers owed', value: String(d.count ?? 0), highlight: true }],
   },
   {
@@ -225,6 +248,7 @@ function usePeriod() {
 
 function ShopReports() {
   const [selected, setSelected] = useState<string>('sales');
+  const [party, setParty] = useState<PartyRef | null>(null);
   const def = REPORTS.find((r) => r.key === selected)!;
   const { from, to, control, label: periodLabel } = usePeriod();
   const [exporting, setExporting] = useState(false);
@@ -328,11 +352,13 @@ function ShopReports() {
               (rows.length === 0 ? (
                 <EmptyState label="Nothing recorded for this period." />
               ) : (
-                <ReportTable columns={def.columns} rows={rows} />
+                <ReportTable columns={def.columns} rows={rows} onOpenParty={setParty} />
               ))}
           </>
         )}
       </section>
+
+      {party && <PartyDetail party={party} onClose={() => setParty(null)} />}
     </div>
   );
 }
@@ -512,10 +538,13 @@ function ReportTable({
   columns,
   rows,
   heading,
+  onOpenParty,
 }: {
-  columns: PrintColumn[];
+  columns: ReportColumn[];
   rows: Array<Record<string, unknown>>;
   heading?: string;
+  /** Omitted by callers that have nowhere to navigate to, e.g. the statement. */
+  onOpenParty?: (party: PartyRef) => void;
 }) {
   if (rows.length === 0) return <EmptyState label="Nothing to show." />;
   return (
@@ -542,6 +571,19 @@ function ReportTable({
                     c.money || c.align === 'right' ? 'text-right' : '',
                     c.muted ? 'cell-muted' : '',
                   ].filter(Boolean).join(' ');
+                  const partyId = c.party ? row[c.party.idKey] : null;
+                  if (c.party && onOpenParty && typeof partyId === 'number' && partyId > 0) {
+                    return (
+                      <td key={c.key} className={cls}>
+                        <button
+                          className="link-cell"
+                          onClick={() => onOpenParty({ id: partyId, kind: c.party!.kind, name: String(raw) })}
+                        >
+                          {String(raw)}
+                        </button>
+                      </td>
+                    );
+                  }
                   return (
                     <td key={c.key} className={cls}>
                       {money ? formatMoney(raw as string) : raw == null || raw === '' ? '-' : String(raw)}
