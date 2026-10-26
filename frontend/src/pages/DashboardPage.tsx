@@ -5,6 +5,7 @@ import * as api from '../api/resources';
 import { formatMoney, formatDate, todayIsoDate } from '../lib/format';
 import { LoadingState, ErrorBanner, EmptyState } from '../components/StatusBits';
 import { TrendChart, BalanceDonut, TopProducts } from '../components/Charts';
+import type { FinanceSummary, PendingArrival } from '../api/types';
 import {
   IconAccounts,
   IconAlert,
@@ -152,8 +153,10 @@ export function DashboardPage() {
           control={trend.control}
         />
         <BalanceDonut
-          receivables={Number(data.totalFarmerReceivables)}
-          payables={Number(data.totalSupplierPayables)}
+          /* Same per-party figures the Debit & Credit panel shows, so the two
+             halves of the dashboard cannot disagree with each other. */
+          receivables={Number(data.finance.receivables.total)}
+          payables={Number(data.finance.payables.total)}
           cash={Number(data.cashAndBank)}
         />
       </div>
@@ -163,18 +166,23 @@ export function DashboardPage() {
         <Stat label="Cash & Bank" value={formatMoney(data.cashAndBank)} icon={<IconAccounts size={13} />} />
         <Stat label="Stock Value" value={formatMoney(data.stockValue)} icon={<IconProducts size={13} />} />
         <Stat
-          label="Farmer Receivables"
-          value={formatMoney(data.totalFarmerReceivables)}
+          label="Receivables"
+          value={formatMoney(data.finance.receivables.total)}
           icon={<IconFarmers size={13} />}
-          hint="Owed to you"
+          hint={`${data.finance.receivables.count} farmer(s) owe you`}
         />
         <Stat
-          label="Supplier Payables"
-          value={formatMoney(data.totalSupplierPayables)}
+          label="Payables"
+          value={formatMoney(data.finance.payables.total)}
           icon={<IconSuppliers size={13} />}
-          hint="Owed by you"
+          tone={Number(data.finance.payables.total) > 0 ? 'warn' : undefined}
+          hint={`${data.finance.payables.count} supplier(s) to pay`}
         />
       </div>
+
+      <FinancePanel finance={data.finance} />
+
+      {data.pendingArrivals.length > 0 && <PendingArrivals rows={data.pendingArrivals} />}
 
       <div className="section-label">This month</div>
       <div className="stat-grid">
@@ -286,5 +294,199 @@ function Stat({
       <div className="value">{value}</div>
       {hint && <div className="hint">{hint}</div>}
     </div>
+  );
+}
+
+/**
+ * Debit and credit, in both senses, side by side.
+ *
+ * "Debit" means two different things in a shop and conflating them is how
+ * dashboards end up lying: on a farmer's account a debit is a sale that raised
+ * what they owe, while on the cash box a debit is money going out. Both are
+ * shown, each labelled with what it actually means here.
+ */
+function FinancePanel({ finance }: { finance: FinanceSummary }) {
+  return (
+    <>
+      <div className="section-label">Debit &amp; Credit</div>
+      <div className="stat-grid">
+        <Stat
+          label="Total Debit"
+          value={formatMoney(finance.ledger.totalDebit)}
+          icon={<IconReports size={13} />}
+          hint="Raised on farmer & supplier accounts"
+        />
+        <Stat
+          label="Total Credit"
+          value={formatMoney(finance.ledger.totalCredit)}
+          icon={<IconReports size={13} />}
+          hint="Settled on those accounts"
+        />
+        <Stat
+          label="Money In"
+          value={formatMoney(finance.money.in)}
+          icon={<IconReceive size={13} />}
+          hint="Into cash & bank, all time"
+        />
+        <Stat
+          label="Money Out"
+          value={formatMoney(finance.money.out)}
+          icon={<IconExpenses size={13} />}
+          hint="Out of cash & bank, all time"
+        />
+      </div>
+
+      <div className="chart-grid narrow">
+        <div className="card">
+          <h3>Who owes what</h3>
+          <div className="ledger-split">
+            <PartyColumn
+              title="Farmers owe you"
+              total={finance.receivables.total}
+              rows={finance.receivables.parties}
+              extra={
+                Number(finance.receivables.advances) > 0
+                  ? `${formatMoney(finance.receivables.advances)} sitting as farmer credit`
+                  : undefined
+              }
+              to="/farmers"
+            />
+            <PartyColumn
+              title="You owe suppliers"
+              total={finance.payables.total}
+              rows={finance.payables.parties}
+              extra={
+                Number(finance.payables.advances) > 0
+                  ? `${formatMoney(finance.payables.advances)} paid in advance`
+                  : undefined
+              }
+              to="/suppliers"
+            />
+          </div>
+          <p className="muted-3" style={{ fontSize: 12, marginBottom: 0 }}>
+            Each party is counted on its own, so one farmer in credit never hides another's debt.
+          </p>
+        </div>
+
+        <div className="card">
+          <h3>Company accounts</h3>
+          <div className="card" style={{ padding: 0, overflowX: 'auto' }}>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Account</th>
+                  <th className="text-right">In</th>
+                  <th className="text-right">Out</th>
+                  <th className="text-right">Balance</th>
+                </tr>
+              </thead>
+              <tbody>
+                {finance.accounts.map((a) => (
+                  <tr key={a.id}>
+                    <td>
+                      {a.name}
+                      <div className="cell-muted" style={{ fontSize: 11 }}>{a.type === 'BANK' ? 'Bank' : 'Cash'}</div>
+                    </td>
+                    <td className="text-right">{formatMoney(a.moneyIn)}</td>
+                    <td className="text-right">{formatMoney(a.moneyOut)}</td>
+                    <td className="text-right" style={{ fontWeight: 600 }}>{formatMoney(a.balance)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="row-between" style={{ marginTop: 10, fontWeight: 600 }}>
+            <span>Net position</span>
+            <span>{formatMoney(finance.netPosition)}</span>
+          </div>
+          <p className="muted-3" style={{ fontSize: 12, marginBottom: 0 }}>
+            What you hold, plus what is owed to you, less what you owe.
+          </p>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function PartyColumn({
+  title,
+  total,
+  rows,
+  extra,
+  to,
+}: {
+  title: string;
+  total: string;
+  rows: Array<{ id: number; name: string; amount: string }>;
+  extra?: string;
+  to: string;
+}) {
+  return (
+    <div>
+      <div className="row-between" style={{ fontWeight: 600, marginBottom: 6 }}>
+        <span>{title}</span>
+        <span>{formatMoney(total)}</span>
+      </div>
+      {rows.length === 0 ? (
+        <p className="muted-3" style={{ fontSize: 12.5 }}>Nothing outstanding.</p>
+      ) : (
+        <ul className="list-plain">
+          {rows.map((r) => (
+            <li key={r.id} className="row-between">
+              <span>{r.name}</span>
+              <span className="num">{formatMoney(r.amount)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {extra && <p className="muted-3" style={{ fontSize: 12 }}>{extra}</p>}
+      <Link to={to} className="btn secondary small" style={{ marginTop: 6 }}>
+        Open
+      </Link>
+    </div>
+  );
+}
+
+/** Ordered and paid for, perhaps, but not on the shelf - so not in stock value. */
+function PendingArrivals({ rows }: { rows: PendingArrival[] }) {
+  return (
+    <>
+      <div className="section-label">Waiting to arrive</div>
+      <div className="card" style={{ padding: 0, overflowX: 'auto' }}>
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Supplier</th>
+              <th>Ref</th>
+              <th>Ordered</th>
+              <th>Expected</th>
+              <th className="text-right">Value</th>
+              <th className="text-right">Still to pay</th>
+              <th>Arrival</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.id}>
+                <td>{r.supplier}</td>
+                <td className="cell-muted">{r.invoiceNumber}</td>
+                <td className="cell-muted">{formatDate(r.invoiceDate)}</td>
+                <td className="cell-muted">{r.expectedArrivalDate ? formatDate(r.expectedArrivalDate) : 'not given'}</td>
+                <td className="text-right">{formatMoney(r.total)}</td>
+                <td className="text-right">{formatMoney(r.balance)}</td>
+                <td>
+                  <span className={`badge ${r.arrivalStatus === 'PARTIAL' ? 'partial' : 'unpaid'}`}>
+                    {r.arrivalStatus === 'PARTIAL' ? 'Part arrived' : 'Pending'}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="muted-3" style={{ fontSize: 12, marginTop: 8 }}>
+        These are not counted in stock on hand or stock value - confirm arrival on the Purchases page.
+      </p>
+    </>
   );
 }
