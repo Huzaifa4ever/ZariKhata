@@ -76,7 +76,7 @@ reportRouter.get('/sales', async (req, res, next) => {
     const rows = sales.map((s) => ({
       invoiceNumber: s.invoiceNumber,
       date: s.invoiceDate.toISOString().slice(0, 10),
-      farmer: s.farmer.name,
+      farmer: s.farmer?.name ?? s.customerName ?? 'Walk-in customer',
       total: s.total.toString(),
       amountPaid: s.amountPaid.toString(),
       balance: s.balance.toString(),
@@ -236,13 +236,229 @@ reportRouter.get('/farmer-statement/:farmerId', async (req, res, next) => {
         status: s.status,
       })),
       payments: payments.map((p) => ({
+        // id and accountId travel with the row so the party screen can offer
+        // admin-mode edit and delete without a second round trip.
+        id: p.id,
+        accountId: p.accountId,
         date: p.paymentDate.toISOString().slice(0, 10),
         amount: p.amount.toString(),
         method: p.method,
-        account: p.account?.name ?? '—',
+        account: p.account?.name ?? '-',
         notes: p.notes ?? '',
       })),
       entries,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+
+/**
+ * The supplier mirror of farmer-statement: what they invoiced us, what we paid,
+ * and a running payable. Previously only farmers had a statement, so "Supplier
+ * Payables" could show a list of balances and nothing else - no dates, no
+ * invoice numbers, no line items.
+ */
+reportRouter.get('/supplier-statement/:supplierId', async (req, res, next) => {
+  try {
+    const id = Number(req.params.supplierId);
+    const supplier = await prisma.supplier.findFirst({ where: { id, businessId: req.businessId! } });
+    if (!supplier) throw AppError.notFound('Supplier not found');
+    const { from, to } = parseDateRange(req.query as Record<string, unknown>);
+
+    const [purchases, payments, allEntries] = await Promise.all([
+      prisma.purchase.findMany({
+        where: { businessId: req.businessId!, supplierId: id, invoiceDate: { gte: from, lte: to } },
+        include: { items: { include: { product: true } } },
+        orderBy: { invoiceDate: 'asc' },
+      }),
+      prisma.supplierPayment.findMany({
+        where: { businessId: req.businessId!, supplierId: id, paymentDate: { gte: from, lte: to } },
+        include: { account: true },
+        orderBy: { paymentDate: 'asc' },
+      }),
+      prisma.ledgerEntry.findMany({
+        where: { businessId: req.businessId!, partyType: 'SUPPLIER', supplierId: id },
+        orderBy: [{ entryDate: 'asc' }, { id: 'asc' }],
+      }),
+    ]);
+
+    let running = new Decimal(supplier.openingBalance.toString());
+    for (const e of allEntries) {
+      if (e.entryDate >= from) break;
+      running = e.direction === 'DEBIT' ? running.plus(e.amount.toString()) : running.minus(e.amount.toString());
+    }
+    const openingBalance = running;
+
+    let billed = new Decimal(0);
+    let paid = new Decimal(0);
+    const entries = allEntries
+      .filter((e) => e.entryDate >= from && e.entryDate <= to)
+      .map((e) => {
+        if (e.direction === 'DEBIT') {
+          running = running.plus(e.amount.toString());
+          billed = billed.plus(e.amount.toString());
+        } else {
+          running = running.minus(e.amount.toString());
+          paid = paid.plus(e.amount.toString());
+        }
+        return {
+          date: e.entryDate.toISOString(),
+          description: e.description ?? e.relatedType ?? '-',
+          debit: e.direction === 'DEBIT' ? e.amount.toString() : '',
+          credit: e.direction === 'CREDIT' ? e.amount.toString() : '',
+          balance: running.toFixed(2),
+        };
+      });
+
+    res.json({
+      supplier,
+      from,
+      to,
+      summary: {
+        openingBalance: openingBalance.toFixed(2),
+        billed: billed.toFixed(2),
+        paid: paid.toFixed(2),
+        closingBalance: running.toFixed(2),
+        invoiceCount: purchases.length,
+        paymentCount: payments.length,
+      },
+      purchases: purchases.map((p) => ({
+        invoiceNumber: p.invoiceNumber,
+        supplierInvoiceNumber: p.supplierInvoiceNumber ?? '',
+        date: p.invoiceDate.toISOString().slice(0, 10),
+        items: p.items.length,
+        total: p.total.toString(),
+        amountPaid: p.amountPaid.toString(),
+        balance: p.balance.toString(),
+        status: p.status,
+      })),
+      // Line-level detail: which products, how many, at what price.
+      lines: purchases.flatMap((p) =>
+        p.items.map((i) => ({
+          date: p.invoiceDate.toISOString().slice(0, 10),
+          invoiceNumber: p.invoiceNumber,
+          product: i.product.name,
+          sku: i.product.sku,
+          quantity: i.quantity.toString(),
+          unitCost: i.unitCost.toString(),
+          lineTotal: i.lineTotal.toString(),
+        })),
+      ),
+      payments: payments.map((p) => ({
+        id: p.id,
+        accountId: p.accountId,
+        date: p.paymentDate.toISOString().slice(0, 10),
+        amount: p.amount.toString(),
+        method: p.method,
+        account: p.account?.name ?? '-',
+        notes: p.notes ?? '',
+      })),
+      entries,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Look up any invoice by its number, sale or purchase, without the caller
+ * needing to know which it is. Returns the party, the lines, what has been
+ * paid against it and what is still outstanding.
+ */
+reportRouter.get('/invoice/:invoiceNumber', async (req, res, next) => {
+  try {
+    const businessId = req.businessId!;
+    const invoiceNumber = String(req.params.invoiceNumber).trim();
+
+    const sale = await prisma.sale.findFirst({
+      where: { businessId, invoiceNumber },
+      include: {
+        farmer: true,
+        items: { include: { product: true } },
+        paymentAllocations: { include: { farmerPayment: { include: { account: true } } } },
+      },
+    });
+
+    if (sale) {
+      return res.json({
+        kind: 'SALE',
+        invoiceNumber: sale.invoiceNumber,
+        date: sale.invoiceDate.toISOString().slice(0, 10),
+        dueDate: sale.dueDate ? sale.dueDate.toISOString().slice(0, 10) : '',
+        party: {
+          id: sale.farmerId ?? 0,
+          kind: 'FARMER',
+          name: sale.farmer?.name ?? sale.customerName ?? 'Walk-in customer',
+          phone: sale.farmer?.phone ?? '',
+          village: sale.farmer?.village ?? '',
+        },
+        // Lets the UI tell a credit customer apart from an unregistered buyer.
+        isWalkIn: !sale.farmerId,
+        lines: sale.items.map((i) => ({
+          product: i.product.name,
+          sku: i.product.sku,
+          quantity: i.quantity.toString(),
+          unitPrice: i.unitPrice.toString(),
+          discount: i.discount.toString(),
+          lineTotal: i.lineTotal.toString(),
+        })),
+        subtotal: sale.subtotal.toString(),
+        discount: sale.discount.toString(),
+        total: sale.total.toString(),
+        amountPaid: sale.amountPaid.toString(),
+        balance: sale.balance.toString(),
+        status: sale.status,
+        notes: sale.notes ?? '',
+        payments: sale.paymentAllocations.map((a) => ({
+          date: a.farmerPayment.paymentDate.toISOString().slice(0, 10),
+          amount: a.allocatedAmount.toString(),
+          method: a.farmerPayment.method,
+          account: a.farmerPayment.account?.name ?? '-',
+        })),
+      });
+    }
+
+    const purchase = await prisma.purchase.findFirst({
+      where: { businessId, invoiceNumber },
+      include: {
+        supplier: true,
+        items: { include: { product: true } },
+        paymentAllocations: { include: { supplierPayment: { include: { account: true } } } },
+      },
+    });
+
+    if (!purchase) throw AppError.notFound(`No invoice found with number "${invoiceNumber}"`);
+
+    res.json({
+      kind: 'PURCHASE',
+      invoiceNumber: purchase.invoiceNumber,
+      supplierInvoiceNumber: purchase.supplierInvoiceNumber ?? '',
+      date: purchase.invoiceDate.toISOString().slice(0, 10),
+      dueDate: purchase.dueDate ? purchase.dueDate.toISOString().slice(0, 10) : '',
+      party: { id: purchase.supplierId, kind: 'SUPPLIER', name: purchase.supplier.name, phone: purchase.supplier.phone ?? '', village: '' },
+      lines: purchase.items.map((i) => ({
+        product: i.product.name,
+        sku: i.product.sku,
+        quantity: i.quantity.toString(),
+        unitPrice: i.unitCost.toString(),
+        discount: i.discount.toString(),
+        lineTotal: i.lineTotal.toString(),
+      })),
+      subtotal: purchase.subtotal.toString(),
+      discount: purchase.discount.toString(),
+      total: purchase.total.toString(),
+      amountPaid: purchase.amountPaid.toString(),
+      balance: purchase.balance.toString(),
+      status: purchase.status,
+      notes: purchase.notes ?? '',
+      payments: purchase.paymentAllocations.map((a) => ({
+        date: a.supplierPayment.paymentDate.toISOString().slice(0, 10),
+        amount: a.allocatedAmount.toString(),
+        method: a.supplierPayment.method,
+        account: a.supplierPayment.account?.name ?? '-',
+      })),
     });
   } catch (err) {
     next(err);
