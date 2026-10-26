@@ -114,6 +114,15 @@ export const IconTasks = (p: IconProps) => (
   </Icon>
 );
 
+/* A pay envelope: the salary handed over, not the person it goes to. */
+export const IconSalaries = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="3" y="5" width="18" height="14" rx="2.2" />
+    <path d="M3 7.5 12 13l9-5.5" />
+    <path d="M12 16.2v-3.6" />
+  </Icon>
+);
+
 export const IconUsers = (p: IconProps) => (
   <Icon {...p}>
     <circle cx="9.5" cy="8.5" r="3.2" />
@@ -208,5 +217,12 @@ export const IconEdit = (p: IconProps) => (
   <Icon {...p}>
     <path d="M12 20h9" />
     <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+  </Icon>
+);
+
+export const IconSearch = (p: IconProps) => (
+  <Icon {...p}>
+    <circle cx="11" cy="11" r="7" />
+    <path d="m16.5 16.5 4 4" />
   </Icon>
 );
