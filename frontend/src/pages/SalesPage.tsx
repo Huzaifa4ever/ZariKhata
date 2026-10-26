@@ -5,11 +5,13 @@ import { formatMoney, formatDate, todayIsoDate } from '../lib/format';
 import { LoadingState, ErrorBanner, EmptyState, StatusBadge } from '../components/StatusBits';
 import { Modal } from '../components/Modal';
 import type { Account, Farmer, Product } from '../api/types';
+import { ProductPicker } from '../components/ProductPicker';
 import { DeleteButton } from '../components/DeleteButton';
 import { PaymentStatusFields, type PayStatus } from '../components/PaymentStatusFields';
 import { EditInvoiceButton } from '../components/EditInvoiceButton';
-import { RecordPaymentButton } from '../components/RecordPaymentButton';
-import { FarmerProductsModal } from '../components/FarmerProductsModal';
+import { PrintInvoiceButton } from '../components/PrintInvoiceButton';
+import { PartyDetail, type PartyRef } from '../components/PartyDetail';
+import { InvoiceDetailModal } from '../components/InvoiceDetailModal';
 
 interface LineItem {
   productId: number | '';
@@ -20,7 +22,8 @@ interface LineItem {
 
 export function SalesPage() {
   const [showCreate, setShowCreate] = useState(false);
-  const [historyFor, setHistoryFor] = useState<{ id: number; name: string } | null>(null);
+  const [detail, setDetail] = useState<PartyRef | null>(null);
+  const [invoiceFor, setInvoiceFor] = useState<string | null>(null);
   const qc = useQueryClient();
   const { data, isLoading, error } = useQuery({ queryKey: ['sales'], queryFn: () => api.listSales() });
 
@@ -55,13 +58,24 @@ export function SalesPage() {
               {data.map((s) => (
                 <tr key={s.id}>
                   <td>
-                    <button
-                      className="link-cell"
-                      onClick={() => s.farmer && setHistoryFor({ id: s.farmerId, name: s.farmer.name })}
-                      title={`What ${s.farmer?.name ?? 'this farmer'} buys`}
-                    >
-                      {s.farmer?.name}
-                    </button>
+                    {s.farmer ? (
+                      <button
+                        className="link-cell"
+                        onClick={() => setDetail({ id: s.farmerId!, kind: 'FARMER', name: s.farmer!.name })}
+                        title={`Open ${s.farmer.name}`}
+                      >
+                        {s.farmer.name}
+                      </button>
+                    ) : (
+                      // No account to open, so the name opens the invoice itself.
+                      <button
+                        className="link-cell walkin-tag"
+                        onClick={() => setInvoiceFor(s.invoiceNumber)}
+                        title={`Open ${s.invoiceNumber}`}
+                      >
+                        {s.customerName || 'Walk-in customer'}
+                      </button>
+                    )}
                   </td>
                   <td>{formatDate(s.invoiceDate)}</td>
                   <td className="cell-muted">{s.invoiceNumber}</td>
@@ -73,14 +87,7 @@ export function SalesPage() {
                   </td>
                   <td>
                     <div className="row" style={{ gap: 2, justifyContent: 'flex-end' }}>
-                    <RecordPaymentButton
-                      kind="sale"
-                      invoiceId={s.id}
-                      partyId={s.farmerId}
-                      partyName={s.farmer?.name ?? ''}
-                      invoiceNumber={s.invoiceNumber}
-                      balance={s.balance}
-                    />
+                    <PrintInvoiceButton invoiceNumber={s.invoiceNumber} />
                     <EditInvoiceButton
                       kind="sale"
                       id={s.id}
@@ -103,9 +110,8 @@ export function SalesPage() {
         </div>
       )}
 
-      {historyFor && (
-        <FarmerProductsModal farmer={historyFor} onClose={() => setHistoryFor(null)} />
-      )}
+      {detail && <PartyDetail party={detail} onClose={() => setDetail(null)} />}
+      {invoiceFor && <InvoiceDetailModal invoiceNumber={invoiceFor} onClose={() => setInvoiceFor(null)} />}
 
       {showCreate && (
         <NewSaleModal
@@ -128,6 +134,7 @@ function NewSaleModal({ onClose, onCreated }: { onClose: () => void; onCreated: 
   const { data: accounts } = useQuery({ queryKey: ['accounts'], queryFn: api.listAccounts });
 
   const [farmerId, setFarmerId] = useState<number | ''>('');
+  const [customerName, setCustomerName] = useState('');
   const [invoiceDate, setInvoiceDate] = useState(todayIsoDate());
   const [discount, setDiscount] = useState('0');
   const [items, setItems] = useState<LineItem[]>([{ productId: '', quantity: '', unitPrice: '', discount: '0' }]);
@@ -153,15 +160,15 @@ function NewSaleModal({ onClose, onCreated }: { onClose: () => void; onCreated: 
     setItems((prev) => prev.map((it, i) => (i === index ? { ...it, ...patch } : it)));
   }
 
-  function onProductPick(index: number, productId: number) {
-    const product = productById.get(productId);
-    updateItem(index, { productId, unitPrice: product?.sellingPrice ?? '' });
+  function onProductPick(index: number, product: Product | null) {
+    updateItem(index, { productId: product?.id ?? '', unitPrice: product?.sellingPrice ?? '' });
   }
 
   const mutation = useMutation({
     mutationFn: () =>
       api.createSale({
-        farmerId,
+        farmerId: farmerId || null,
+        customerName: farmerId ? undefined : customerName.trim() || undefined,
         invoiceDate: new Date(invoiceDate).toISOString(),
         discount: Number(discount || 0),
         items: items
@@ -191,7 +198,6 @@ function NewSaleModal({ onClose, onCreated }: { onClose: () => void; onCreated: 
         onSubmit={(e) => {
           e.preventDefault();
           setError(null);
-          if (!farmerId) return setError('Choose a farmer.');
           if (payStatus !== 'UNPAID' && !accountId) return setError('Choose which account the money goes into.');
           if (payStatus === 'PARTIAL' && paidNow <= 0) return setError('Enter how much is being paid now.');
           mutation.mutate();
@@ -199,9 +205,9 @@ function NewSaleModal({ onClose, onCreated }: { onClose: () => void; onCreated: 
       >
         <div className="form-grid">
           <div className="field">
-            <label>Farmer</label>
-            <select value={farmerId} onChange={(e) => setFarmerId(e.target.value ? Number(e.target.value) : '')} required>
-              <option value="">Select farmer…</option>
+            <label>Customer</label>
+            <select value={farmerId} onChange={(e) => setFarmerId(e.target.value ? Number(e.target.value) : '')}>
+              <option value="">Walk-in customer (no account)</option>
               {(farmers ?? []).map((f: Farmer) => (
                 <option key={f.id} value={f.id}>
                   {f.name}
@@ -209,6 +215,18 @@ function NewSaleModal({ onClose, onCreated }: { onClose: () => void; onCreated: 
               ))}
             </select>
           </div>
+          {!farmerId && (
+            <div className="field">
+              <label htmlFor="walkin-name">Walk-in name (optional)</label>
+              <input
+                id="walkin-name"
+                value={customerName}
+                onChange={(e) => setCustomerName(e.target.value)}
+                placeholder="Leave blank for an anonymous counter sale"
+              />
+              <span className="hint">No credit account is created for a walk-in.</span>
+            </div>
+          )}
           <div className="field">
             <label>Invoice date</label>
             <input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} required />
@@ -220,18 +238,12 @@ function NewSaleModal({ onClose, onCreated }: { onClose: () => void; onCreated: 
           <div key={i} className="form-grid" style={{ marginBottom: 8, gridTemplateColumns: '2fr 1fr 1fr 1fr auto' }}>
             <div className="field">
               <label>Product</label>
-              <select
+              <ProductPicker
+                products={products ?? []}
                 value={item.productId}
-                onChange={(e) => onProductPick(i, Number(e.target.value))}
+                onChange={(p) => onProductPick(i, p)}
                 required
-              >
-                <option value="">Select…</option>
-                {(products ?? []).map((p: Product) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} ({p.currentStock} {p.unit})
-                  </option>
-                ))}
-              </select>
+              />
             </div>
             <div className="field">
               <label>Qty</label>
