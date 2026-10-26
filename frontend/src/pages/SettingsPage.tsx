@@ -284,8 +284,9 @@ function AdminModeCard() {
         <div>
           <h3 style={{ marginTop: 0, marginBottom: 4 }}>Admin mode</h3>
           <p className="muted" style={{ margin: 0 }}>
-            Turn this on to show delete buttons on expenses, invoices, payments, farmers, suppliers
-            and products. It switches itself off every time ZariKhata restarts.
+            Turn this on to show edit and delete buttons on expenses, invoices, payments, deliveries,
+            farmers, suppliers, products and users. Only an owner can correct or remove a record -
+            staff record new ones. It switches itself off every time ZariKhata restarts.
           </p>
         </div>
         <button
