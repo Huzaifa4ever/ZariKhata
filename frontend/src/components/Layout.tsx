@@ -5,16 +5,14 @@ import { Logo } from './Logo';
 import { ThemeToggle } from './ThemeToggle';
 import {
   IconAccounts,
-  IconBiller,
   IconDashboard,
   IconExpenses,
   IconFarmers,
   IconLogout,
-  IconPayOut,
   IconProducts,
   IconPurchases,
-  IconReceive,
   IconReports,
+  IconSalaries,
   IconSales,
   IconSettings,
   IconSuppliers,
@@ -42,7 +40,6 @@ const NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
       { to: '/sales', label: 'Sales', Icon: IconSales },
       { to: '/purchases', label: 'Purchases', Icon: IconPurchases },
       { to: '/products', label: 'Products & Stock', Icon: IconProducts },
-      { to: '/biller', label: 'Biller', Icon: IconBiller },
     ],
   },
   {
@@ -55,8 +52,6 @@ const NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
   {
     label: 'Money',
     items: [
-      { to: '/farmer-payments', label: 'Receive Payments', Icon: IconReceive },
-      { to: '/supplier-payments', label: 'Supplier Payments', Icon: IconPayOut },
       { to: '/expenses', label: 'Expenses', Icon: IconExpenses },
       { to: '/accounts', label: 'Accounts', Icon: IconAccounts },
     ],
@@ -67,6 +62,7 @@ const NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
       { to: '/reports', label: 'Reports', Icon: IconReports },
       { to: '/tasks', label: 'Tasks & Reminders', Icon: IconTasks },
       { to: '/users', label: 'Users', Icon: IconUsers, ownerOnly: true },
+      { to: '/salaries', label: 'Employee Salaries', Icon: IconSalaries, ownerOnly: true },
       { to: '/settings', label: 'Settings', Icon: IconSettings, ownerOnly: true },
     ],
   },
