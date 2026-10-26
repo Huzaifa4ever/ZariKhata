@@ -4,11 +4,41 @@ import * as api from '../api/resources';
 import { formatMoney, formatDate, todayIsoDate } from '../lib/format';
 import { LoadingState, ErrorBanner, EmptyState, StatusBadge } from '../components/StatusBits';
 import { Modal } from '../components/Modal';
-import type { Account, Product, Supplier } from '../api/types';
+import type { Account, Supplier } from '../api/types';
+import { ProductPicker } from '../components/ProductPicker';
 import { DeleteButton } from '../components/DeleteButton';
 import { PaymentStatusFields, type PayStatus } from '../components/PaymentStatusFields';
 import { EditInvoiceButton } from '../components/EditInvoiceButton';
-import { RecordPaymentButton } from '../components/RecordPaymentButton';
+import { PrintInvoiceButton } from '../components/PrintInvoiceButton';
+import { PartyDetail, type PartyRef } from '../components/PartyDetail';
+import { ReceiveOrderModal, outstandingOf } from '../components/ReceiveOrderModal';
+import { DeliveryHistoryModal, DeliveryHistoryButton } from '../components/DeliveryHistory';
+import type { Purchase } from '../api/types';
+
+/** "4 of 10 arrived" for the list, without opening the invoice. */
+function arrivalSummary(p: Purchase): string {
+  const items = p.items ?? [];
+  if (items.length === 0) return '';
+  const ordered = items.reduce((sum, i) => sum + Number(i.quantity), 0);
+  const received = items.reduce((sum, i) => sum + Number(i.quantityReceived ?? 0), 0);
+  return `${received} of ${ordered} arrived`;
+}
+
+function ArrivalBadge({ purchase }: { purchase: Purchase }) {
+  if (purchase.arrivalStatus === 'RECEIVED') return <span className="badge paid">In stock</span>;
+  const label = purchase.arrivalStatus === 'PARTIAL' ? 'Part arrived' : 'Pending arrival';
+  return (
+    <>
+      <span className={`badge ${purchase.arrivalStatus === 'PARTIAL' ? 'partial' : 'unpaid'}`}>{label}</span>
+      <div className="cell-muted" style={{ fontSize: 11 }}>
+        {arrivalSummary(purchase)}
+        {purchase.expectedArrivalDate && purchase.arrivalStatus === 'PENDING'
+          ? ` - due ${formatDate(purchase.expectedArrivalDate)}`
+          : ''}
+      </div>
+    </>
+  );
+}
 
 interface LineItem {
   productId: number | '';
@@ -20,6 +50,9 @@ interface LineItem {
 
 export function PurchasesPage() {
   const [showCreate, setShowCreate] = useState(false);
+  const [detail, setDetail] = useState<PartyRef | null>(null);
+  const [receiving, setReceiving] = useState<Purchase | null>(null);
+  const [deliveries, setDeliveries] = useState<Purchase | null>(null);
   const qc = useQueryClient();
   const { data, isLoading, error } = useQuery({ queryKey: ['purchases'], queryFn: () => api.listPurchases() });
 
@@ -46,14 +79,22 @@ export function PurchasesPage() {
                 <th className="text-right">Total</th>
                 <th className="text-right">Paid</th>
                 <th className="text-right">Balance</th>
-                <th>Status</th>
+                <th>Payment</th>
+                <th>Arrival</th>
                 <th />
               </tr>
             </thead>
             <tbody>
               {data.map((p) => (
                 <tr key={p.id}>
-                  <td>{p.supplier?.name}</td>
+                  <td>
+                    <button
+                      className="link-cell"
+                      onClick={() => p.supplier && setDetail({ id: p.supplierId, kind: 'SUPPLIER', name: p.supplier.name })}
+                    >
+                      {p.supplier?.name}
+                    </button>
+                  </td>
                   <td>{formatDate(p.invoiceDate)}</td>
                   <td className="cell-muted">{p.invoiceNumber}</td>
                   <td className="text-right">{formatMoney(p.total)}</td>
@@ -63,15 +104,17 @@ export function PurchasesPage() {
                     <StatusBadge status={p.status} />
                   </td>
                   <td>
+                    <ArrivalBadge purchase={p} />
+                  </td>
+                  <td>
                     <div className="row" style={{ gap: 2, justifyContent: 'flex-end' }}>
-                    <RecordPaymentButton
-                      kind="purchase"
-                      invoiceId={p.id}
-                      partyId={p.supplierId}
-                      partyName={p.supplier?.name ?? ''}
-                      invoiceNumber={p.invoiceNumber}
-                      balance={p.balance}
-                    />
+                    {p.arrivalStatus !== 'RECEIVED' && (
+                      <button className="btn small" onClick={() => setReceiving(p)}>
+                        Order arrived
+                      </button>
+                    )}
+                    <DeliveryHistoryButton purchase={p} onOpen={() => setDeliveries(p)} />
+                    <PrintInvoiceButton invoiceNumber={p.invoiceNumber} />
                     <EditInvoiceButton
                       kind="purchase"
                       id={p.id}
@@ -92,6 +135,18 @@ export function PurchasesPage() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {detail && <PartyDetail party={detail} onClose={() => setDetail(null)} />}
+
+      {deliveries && <DeliveryHistoryModal purchase={deliveries} onClose={() => setDeliveries(null)} />}
+
+      {receiving && (
+        <ReceiveOrderModal
+          purchase={receiving}
+          onClose={() => setReceiving(null)}
+          onDone={() => setReceiving(null)}
+        />
       )}
 
       {showCreate && (
@@ -117,6 +172,10 @@ function NewPurchaseModal({ onClose, onCreated }: { onClose: () => void; onCreat
   const [supplierId, setSupplierId] = useState<number | ''>('');
   const [supplierInvoiceNumber, setSupplierInvoiceNumber] = useState('');
   const [invoiceDate, setInvoiceDate] = useState(todayIsoDate());
+  // Two genuinely different things: goods carried back from the dealer today,
+  // versus an order placed for delivery later. Only the first is stock now.
+  const [isOrder, setIsOrder] = useState(false);
+  const [expectedArrivalDate, setExpectedArrivalDate] = useState('');
   const [discount, setDiscount] = useState('0');
   const [items, setItems] = useState<LineItem[]>([{ productId: '', quantity: '', unitCost: '', discount: '0', expiryDate: '' }]);
   const [payStatus, setPayStatus] = useState<PayStatus>('UNPAID');
@@ -145,6 +204,8 @@ function NewPurchaseModal({ onClose, onCreated }: { onClose: () => void; onCreat
         supplierId,
         supplierInvoiceNumber: supplierInvoiceNumber || undefined,
         invoiceDate: new Date(invoiceDate).toISOString(),
+        isOrder,
+        expectedArrivalDate: isOrder && expectedArrivalDate ? expectedArrivalDate : undefined,
         discount: Number(discount || 0),
         items: items
           .filter((it) => it.productId !== '' && Number(it.quantity) > 0)
@@ -180,6 +241,29 @@ function NewPurchaseModal({ onClose, onCreated }: { onClose: () => void; onCreat
           mutation.mutate();
         }}
       >
+        <div className="seg-choice" role="radiogroup" aria-label="Where are the goods?">
+          <button
+            type="button"
+            role="radio"
+            aria-checked={!isOrder}
+            className={!isOrder ? 'active' : ''}
+            onClick={() => setIsOrder(false)}
+          >
+            Goods are here
+            <span>Stock goes up now</span>
+          </button>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={isOrder}
+            className={isOrder ? 'active' : ''}
+            onClick={() => setIsOrder(true)}
+          >
+            Order placed
+            <span>Stock waits for arrival</span>
+          </button>
+        </div>
+
         <div className="form-grid">
           <div className="field">
             <label>Supplier</label>
@@ -200,6 +284,18 @@ function NewPurchaseModal({ onClose, onCreated }: { onClose: () => void; onCreat
             <label>Invoice date</label>
             <input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} required />
           </div>
+          {isOrder && (
+            <div className="field">
+              <label htmlFor="eta">Expected arrival</label>
+              <input
+                id="eta"
+                type="date"
+                value={expectedArrivalDate}
+                onChange={(e) => setExpectedArrivalDate(e.target.value)}
+              />
+              <span className="hint">Leave blank if the supplier did not say.</span>
+            </div>
+          )}
         </div>
 
         <h4 style={{ marginTop: 16 }}>Items</h4>
@@ -207,14 +303,12 @@ function NewPurchaseModal({ onClose, onCreated }: { onClose: () => void; onCreat
           <div key={i} className="form-grid" style={{ marginBottom: 8, gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr auto' }}>
             <div className="field">
               <label>Product</label>
-              <select value={item.productId} onChange={(e) => updateItem(i, { productId: Number(e.target.value) })} required>
-                <option value="">Select…</option>
-                {(products ?? []).map((p: Product) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
+              <ProductPicker
+                products={products ?? []}
+                value={item.productId}
+                onChange={(p) => updateItem(i, { productId: p?.id ?? '' })}
+                required
+              />
             </div>
             <div className="field">
               <label>Qty</label>
