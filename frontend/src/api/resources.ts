@@ -27,7 +27,7 @@ export const updateBusiness = (data: Partial<Business>) =>
 
 // --- users ---
 export const listUsers = () => apiRequest<User[]>('/api/users');
-export const createUser = (data: { name: string; username: string; password: string; role?: string }) =>
+export const createUser = (data: { name: string; username: string; password: string; role?: string; monthlySalary?: number }) =>
   apiRequest<User>('/api/users', { method: 'POST', body: data });
 export const updateUser = (id: number, data: Record<string, unknown>) =>
   apiRequest<User>(`/api/users/${id}`, { method: 'PATCH', body: data });
@@ -109,6 +109,24 @@ export const listPurchases = (filters: Record<string, string | number | undefine
 export const getPurchase = (id: number) => apiRequest<Purchase>(`/api/purchases/${id}`);
 export const createPurchase = (data: Record<string, unknown>) =>
   apiRequest<Purchase>('/api/purchases', { method: 'POST', body: data });
+/** Confirm an order has physically arrived. The only path that stocks ordered goods. */
+export const receivePurchase = (id: number, data: Record<string, unknown>) =>
+  apiRequest<Purchase>(`/api/purchases/${id}/receive`, { method: 'POST', body: data });
+export interface PurchaseReceiptRow {
+  id: number;
+  receivedDate: string;
+  notes: string | null;
+  closedOrder: boolean;
+  items: Array<{
+    id: number;
+    quantityAccepted: string;
+    quantityRejected: string;
+    quantityCancelled: string;
+    purchaseItem: { product?: { name: string; unit: string } };
+  }>;
+}
+export const listPurchaseReceipts = (id: number) =>
+  apiRequest<PurchaseReceiptRow[]>(`/api/purchases/${id}/receipts`);
 export const createPurchaseReturn = (data: Record<string, unknown>) =>
   apiRequest('/api/purchase-returns', { method: 'POST', body: data });
 
@@ -172,17 +190,87 @@ export interface FarmerStatement {
 export const getFarmerStatement = (farmerId: number, params: { from?: string; to?: string } = {}) =>
   apiRequest<FarmerStatement>(`/api/reports/farmer-statement/${farmerId}`, { query: params });
 
+export interface PartyStatement {
+  farmer?: { id: number; name: string; phone?: string | null; village?: string | null };
+  supplier?: { id: number; name: string; phone?: string | null; address?: string | null };
+  summary: {
+    openingBalance: string; charged?: string; billed?: string; paid: string;
+    closingBalance: string; invoiceCount: number; paymentCount: number;
+  };
+  sales?: Array<Record<string, string | number>>;
+  purchases?: Array<Record<string, string | number>>;
+  lines?: Array<Record<string, string>>;
+  payments: Array<Record<string, string | number>>;
+  entries: Array<{ date: string; description: string; debit: string; credit: string; balance: string }>;
+}
+export const getSupplierStatement = (supplierId: number, params: { from?: string; to?: string } = {}) =>
+  apiRequest<PartyStatement>(`/api/reports/supplier-statement/${supplierId}`, { query: params });
+
+export interface InvoiceLookup {
+  kind: 'SALE' | 'PURCHASE';
+  invoiceNumber: string; supplierInvoiceNumber?: string; date: string; dueDate: string;
+  party: { id: number; kind: 'FARMER' | 'SUPPLIER'; name: string; phone: string; village: string };
+  lines: Array<{ product: string; sku: string; quantity: string; unitPrice: string; discount: string; lineTotal: string }>;
+  subtotal: string; discount: string; total: string; amountPaid: string; balance: string;
+  status: string; notes: string;
+  payments: Array<{ date: string; amount: string; method: string; account: string }>;
+}
+export const lookupInvoice = (invoiceNumber: string) =>
+  apiRequest<InvoiceLookup>(`/api/reports/invoice/${encodeURIComponent(invoiceNumber)}`);
+
+// --- employee salaries ---
+export interface PayrollRow {
+  userId: number; name: string; username: string; role: string;
+  monthlySalary: string; status: 'PAID' | 'UNPAID';
+  paidAmount: string; paidDate: string; account: string; outstanding: string;
+  advanceOutstanding: string; netPayable: string; arrears: string[];
+  expenseDeduction: string;
+  deductions: Array<{ date: string; label: string; amount: string }>;
+  salaryPaymentId: number | null;
+}
+export interface Payroll {
+  year: number; month: number; rows: PayrollRow[];
+  totals: { payroll: string; paid: string; outstanding: string; advances: string; deductions: string; unpaidCount: number; arrearsCount: number };
+}
+export const getPayroll = (params: { year?: number; month?: number } = {}) =>
+  apiRequest<Payroll>('/api/salaries', { query: params });
+export const paySalary = (data: Record<string, unknown>) =>
+  apiRequest<{ id: number; employee: string; amount: string; paidDate: string; account: string; period: string }>(
+    '/api/salaries/pay',
+    { method: 'POST', body: data },
+  );
+export const getSalaryHistory = (userId: number) =>
+  apiRequest<{
+    employee: { id: number; name: string; username: string; role: string; monthlySalary: string };
+    totalPaid: string;
+    rows: Array<{ period: string; paidDate: string; amount: string; account: string; notes: string }>;
+  }>(`/api/salaries/history/${userId}`);
+export const payAdvance = (data: Record<string, unknown>) =>
+  apiRequest<{ id: number; amount: string }>('/api/salaries/advance', { method: 'POST', body: data });
+export const getAdvances = (userId: number) =>
+  apiRequest<{ outstanding: string; rows: Array<{ id: number; date: string; amount: string; account: string; notes: string; settled: boolean }> }>(
+    `/api/salaries/advances/${userId}`,
+  );
+export const deleteAdvance = (id: number) =>
+  apiRequest<{ deleted: boolean }>(`/api/salaries/advance/${id}`, { method: 'DELETE' });
+export const deleteSalaryPayment = (id: number) =>
+  apiRequest<{ deleted: boolean }>(`/api/salaries/${id}`, { method: 'DELETE' });
+
 // --- admin mode (owner-only destructive actions) ---
 export type AdminResource =
-  | 'expenses' | 'sales' | 'purchases'
+  | 'expenses' | 'sales' | 'purchases' | 'users'
   | 'farmer-payments' | 'supplier-payments'
-  | 'farmers' | 'suppliers' | 'products';
+  | 'farmers' | 'suppliers' | 'products' | 'purchase-receipts';
 export const adminUpdateExpense = (id: number, data: Record<string, unknown>) =>
   apiRequest(`/api/admin/expenses/${id}`, { method: 'PATCH', body: data });
 export const adminUpdateSale = (id: number, data: Record<string, unknown>) =>
   apiRequest(`/api/admin/sales/${id}`, { method: 'PATCH', body: data });
 export const adminUpdatePurchase = (id: number, data: Record<string, unknown>) =>
   apiRequest(`/api/admin/purchases/${id}`, { method: 'PATCH', body: data });
+export const adminUpdateFarmerPayment = (id: number, data: Record<string, unknown>) =>
+  apiRequest(`/api/admin/farmer-payments/${id}`, { method: 'PATCH', body: data });
+export const adminUpdateSupplierPayment = (id: number, data: Record<string, unknown>) =>
+  apiRequest(`/api/admin/supplier-payments/${id}`, { method: 'PATCH', body: data });
 export const adminDelete = (resource: AdminResource, id: number) =>
   apiRequest<{ deleted: boolean }>(`/api/admin/${resource}/${id}`, { method: 'DELETE' });
 
