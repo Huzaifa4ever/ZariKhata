@@ -31,7 +31,7 @@ export async function listProducts(businessId: number, filters: ProductFilters) 
         ? { OR: [{ name: { contains: filters.q } }, { sku: { contains: filters.q } }] }
         : {}),
     },
-    include: { category: true, preferredSupplier: true },
+    include: { category: true, preferredSupplier: true, createdByUser: { select: { name: true } } },
     orderBy: { name: 'asc' },
   });
 
@@ -74,7 +74,7 @@ export async function listProducts(businessId: number, filters: ProductFilters) 
 export async function getProductDetail(businessId: number, id: number) {
   const product = await prisma.product.findFirst({
     where: { id, businessId },
-    include: { category: true, preferredSupplier: true },
+    include: { category: true, preferredSupplier: true, createdByUser: { select: { name: true } } },
   });
   if (!product) throw AppError.notFound('Product not found');
   const stock = await getProductStock(prisma, id);
@@ -123,6 +123,8 @@ export async function createProduct(businessId: number, userId: number, input: C
         preferredSupplierId: input.preferredSupplierId,
         notes: input.notes,
         imageData: input.imageData ?? null,
+        // Stock is money: every product carries the name of whoever added it.
+        createdByUserId: userId,
       },
     });
 
