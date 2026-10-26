@@ -12,15 +12,13 @@ import { FarmersPage } from './pages/FarmersPage';
 import { SuppliersPage } from './pages/SuppliersPage';
 import { SalesPage } from './pages/SalesPage';
 import { PurchasesPage } from './pages/PurchasesPage';
-import { FarmerPaymentsPage } from './pages/FarmerPaymentsPage';
-import { SupplierPaymentsPage } from './pages/SupplierPaymentsPage';
 import { ExpensesPage } from './pages/ExpensesPage';
 import { AccountsPage } from './pages/AccountsPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { TasksPage } from './pages/TasksPage';
 import { UsersPage } from './pages/UsersPage';
+import { SalariesPage } from './pages/SalariesPage';
 import { SettingsPage } from './pages/SettingsPage';
-import { BillerPage } from './pages/BillerPage';
 
 function RequireAuth({ children }: { children: JSX.Element }) {
   const { user, loading } = useAuth();
@@ -68,16 +66,19 @@ export default function App() {
         <Route path="suppliers" element={<SuppliersPage />} />
         <Route path="sales" element={<SalesPage />} />
         <Route path="purchases" element={<PurchasesPage />} />
-        <Route path="farmer-payments" element={<FarmerPaymentsPage />} />
-        <Route path="supplier-payments" element={<SupplierPaymentsPage />} />
         <Route path="expenses" element={<ExpensesPage />} />
         <Route path="accounts" element={<AccountsPage />} />
         <Route path="reports" element={<ReportsPage />} />
-        <Route path="biller" element={<BillerPage />} />
         <Route path="tasks" element={<TasksPage />} />
         <Route path="users" element={<UsersPage />} />
+        <Route path="salaries" element={<SalariesPage />} />
         <Route path="settings" element={<SettingsPage />} />
       </Route>
+      {/* Merged away: billing now prints from a real sale, and payments are
+          taken inside the farmer/supplier record. Old links still resolve. */}
+      <Route path="/biller" element={<Navigate to="/sales" replace />} />
+      <Route path="/farmer-payments" element={<Navigate to="/farmers" replace />} />
+      <Route path="/supplier-payments" element={<Navigate to="/suppliers" replace />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
