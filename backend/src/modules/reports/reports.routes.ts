@@ -77,6 +77,9 @@ reportRouter.get('/sales', async (req, res, next) => {
       invoiceNumber: s.invoiceNumber,
       date: s.invoiceDate.toISOString().slice(0, 10),
       farmer: s.farmer?.name ?? s.customerName ?? 'Walk-in customer',
+      // Carried so the report table can open the farmer's record. Null for a
+      // walk-in, which has no account to open.
+      farmerId: s.farmerId,
       total: s.total.toString(),
       amountPaid: s.amountPaid.toString(),
       balance: s.balance.toString(),
@@ -100,6 +103,7 @@ reportRouter.get('/purchases', async (req, res, next) => {
       invoiceNumber: p.invoiceNumber,
       date: p.invoiceDate.toISOString().slice(0, 10),
       supplier: p.supplier.name,
+      supplierId: p.supplierId,
       total: p.total.toString(),
       amountPaid: p.amountPaid.toString(),
       balance: p.balance.toString(),
