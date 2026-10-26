@@ -36,6 +36,12 @@ export function rs(v: number | string): string {
   return n.toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+export function todayDisplay(): string {
+  return new Date().toLocaleDateString('en-GB', {
+    timeZone: 'Asia/Karachi', day: '2-digit', month: 'short', year: 'numeric',
+  });
+}
+
 export function printedAt(): string {
   return new Date().toLocaleString('en-GB', {
     timeZone: 'Asia/Karachi',
