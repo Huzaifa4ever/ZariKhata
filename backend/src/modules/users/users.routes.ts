@@ -11,7 +11,7 @@ import { AppError } from '../../lib/errors';
 export const userRouter = Router();
 userRouter.use(requireAuth);
 
-const publicUser = { id: true, name: true, username: true, email: true, role: true, isActive: true, createdAt: true } as const;
+const publicUser = { id: true, name: true, username: true, email: true, role: true, isActive: true, monthlySalary: true, createdAt: true } as const;
 
 userRouter.get('/', requireRole('OWNER'), async (req, res, next) => {
   try {
@@ -40,6 +40,9 @@ const meSchema = z
     currentPassword: z.string().optional(),
     newPassword: z.string().min(8).optional(),
   })
+  // strict(): a request trying to slip in `role` or `monthlySalary` is
+  // rejected outright instead of silently having the key dropped.
+  .strict()
   .refine((d) => !d.newPassword || !!d.currentPassword, {
     message: 'Enter your current password to set a new one',
     path: ['currentPassword'],
@@ -104,6 +107,7 @@ const createSchema = z.object({
   name: z.string().min(1),
   username: usernameSchema,
   email: z.string().email().nullish(),
+  monthlySalary: z.number().min(0).nullish(),
   password: z.string().min(8),
   role: z.nativeEnum(UserRole).default(UserRole.EMPLOYEE),
 });
@@ -121,6 +125,7 @@ userRouter.post('/', requireRole('OWNER'), async (req, res, next) => {
         name: data.name,
         username: data.username,
         email: data.email ?? null,
+        monthlySalary: data.monthlySalary ?? null,
         passwordHash,
         role: data.role,
       },
@@ -150,6 +155,7 @@ const updateSchema = z.object({
   role: z.nativeEnum(UserRole).optional(),
   isActive: z.boolean().optional(),
   password: z.string().min(8).optional(),
+  monthlySalary: z.number().min(0).nullish(),
 });
 
 userRouter.patch('/:id', requireRole('OWNER'), async (req, res, next) => {
@@ -158,6 +164,13 @@ userRouter.patch('/:id', requireRole('OWNER'), async (req, res, next) => {
     const data = updateSchema.parse(req.body);
     const target = await prisma.user.findFirst({ where: { id, businessId: req.businessId! } });
     if (!target) throw AppError.notFound('User not found');
+
+    // Locking yourself out, or demoting yourself, has no undo - there may be
+    // no other owner left to put it back.
+    if (target.id === req.user!.id) {
+      if (data.isActive === false) throw AppError.badRequest('You cannot deactivate your own account.');
+      if (data.role && data.role !== target.role) throw AppError.badRequest('You cannot change your own role.');
+    }
 
     if (target.role === UserRole.OWNER && data.role === UserRole.EMPLOYEE) {
       const ownerCount = await prisma.user.count({
@@ -178,6 +191,9 @@ userRouter.patch('/:id', requireRole('OWNER'), async (req, res, next) => {
       isActive: data.isActive,
     };
     if (data.email !== undefined) updateData.email = data.email ?? null;
+    // Owner-only on purpose: salary is deliberately absent from the /me route
+    // so staff cannot give themselves a raise.
+    if (data.monthlySalary !== undefined) updateData.monthlySalary = data.monthlySalary ?? null;
     if (data.password) updateData.passwordHash = await hashPassword(data.password);
 
     const updated = await prisma.user.update({ where: { id }, data: updateData, select: publicUser });
