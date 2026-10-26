@@ -33,8 +33,17 @@ async function reconcileSales() {
   const sales = await prisma.sale.findMany();
   for (const sale of sales) {
     const paid = await prisma.farmerPaymentAllocation.aggregate({ where: { saleId: sale.id }, _sum: { allocatedAmount: true } });
+    // A walk-in has no credit account, so its cash never becomes a
+    // FarmerPayment - it is posted straight against the sale. Counting only
+    // allocations would make every counter sale look unpaid.
+    const atCounter = await prisma.accountTransaction.aggregate({
+      where: { relatedType: 'Sale', relatedId: sale.id, direction: 'CREDIT' },
+      _sum: { amount: true },
+    });
     const returned = await prisma.saleReturnItem.aggregate({ where: { saleReturn: { saleId: sale.id } }, _sum: { lineTotal: true } });
-    const expectedPaid = new Decimal(paid._sum.allocatedAmount?.toString() ?? 0);
+    const expectedPaid = new Decimal(paid._sum.allocatedAmount?.toString() ?? 0).plus(
+      new Decimal(atCounter._sum.amount?.toString() ?? 0),
+    );
     const expectedBalance = new Decimal(sale.total.toString())
       .minus(expectedPaid)
       .minus(new Decimal(returned._sum.lineTotal?.toString() ?? 0));
@@ -94,10 +103,23 @@ async function reconcileAccounts() {
     const received = await prisma.farmerPayment.aggregate({ where: { accountId: account.id }, _sum: { amount: true } });
     const paidToSuppliers = await prisma.supplierPayment.aggregate({ where: { accountId: account.id }, _sum: { amount: true } });
     const expenses = await prisma.expense.aggregate({ where: { accountId: account.id }, _sum: { amount: true } });
+    // Two more ways money legitimately moves, neither of which creates a
+    // payment or expense row: cash taken over the counter on a walk-in sale,
+    // and cash advanced to an employee against their salary.
+    const counterSales = await prisma.accountTransaction.aggregate({
+      where: { accountId: account.id, relatedType: 'Sale', direction: 'CREDIT' },
+      _sum: { amount: true },
+    });
+    const advances = await prisma.employeeAdvance.aggregate({
+      where: { accountId: account.id, settledBySalaryPaymentId: null },
+      _sum: { amount: true },
+    });
     const independent = new Decimal(account.openingBalance.toString())
       .plus(new Decimal(received._sum.amount?.toString() ?? 0))
+      .plus(new Decimal(counterSales._sum.amount?.toString() ?? 0))
       .minus(new Decimal(paidToSuppliers._sum.amount?.toString() ?? 0))
-      .minus(new Decimal(expenses._sum.amount?.toString() ?? 0));
+      .minus(new Decimal(expenses._sum.amount?.toString() ?? 0))
+      .minus(new Decimal(advances._sum.amount?.toString() ?? 0));
     const ledgerDerived = await getAccountBalance(prisma, account.id);
     report(`Account #${account.id} (${account.name}) balance`, independent, ledgerDerived);
   }
