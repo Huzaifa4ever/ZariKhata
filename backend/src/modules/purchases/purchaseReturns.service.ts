@@ -48,7 +48,9 @@ export async function createPurchaseReturn(businessId: number, userId: number, i
         _sum: { quantity: true },
       });
       const previouslyReturned = new Decimal(alreadyReturned._sum.quantity?.toString() ?? 0);
-      const eligible = new Decimal(purchaseItem.quantity.toString()).minus(previouslyReturned);
+      // Only goods that actually arrived can go back - an order line that
+      // never turned up is handled by rejecting it on the arrival screen.
+      const eligible = new Decimal(purchaseItem.quantityReceived.toString()).minus(previouslyReturned);
       const requested = new Decimal(reqItem.quantity);
       if (requested.gt(eligible)) {
         throw AppError.conflict('Return quantity exceeds what remains returnable for this item', {
