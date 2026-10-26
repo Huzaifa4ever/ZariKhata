@@ -104,16 +104,21 @@ export async function createSaleReturn(businessId: number, userId: number, input
       },
     });
 
-    await recordLedgerEntry(tx, {
-      businessId,
-      partyType: PartyType.FARMER,
-      farmerId: sale.farmerId,
-      direction: LedgerDirection.CREDIT,
-      amount: totalAmount,
-      relatedType: 'SaleReturn',
-      relatedId: saleReturn.id,
-      description: `Sale return ${returnNumber} on ${sale.invoiceNumber}`,
-    });
+    // A walk-in sale never created a receivable, so there is nothing to credit
+    // back on a ledger. Their refund is handled purely through the cash account
+    // below, which is also the only way they could have paid in the first place.
+    if (sale.farmerId) {
+      await recordLedgerEntry(tx, {
+        businessId,
+        partyType: PartyType.FARMER,
+        farmerId: sale.farmerId,
+        direction: LedgerDirection.CREDIT,
+        amount: totalAmount,
+        relatedType: 'SaleReturn',
+        relatedId: saleReturn.id,
+        description: `Sale return ${returnNumber} on ${sale.invoiceNumber}`,
+      });
+    }
 
     if (input.cashRefundAccountId) {
       const account = await tx.account.findFirst({ where: { id: input.cashRefundAccountId, businessId } });

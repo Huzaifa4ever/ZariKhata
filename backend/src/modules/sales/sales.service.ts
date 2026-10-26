@@ -20,7 +20,8 @@ export interface SaleItemInput {
 }
 
 export interface CreateSaleInput {
-  farmerId: number;
+  farmerId?: number | null;
+  customerName?: string;
   invoiceDate: string;
   dueDate?: string;
   discount?: number;
@@ -32,8 +33,11 @@ export interface CreateSaleInput {
 export async function createSale(businessId: number, userId: number, input: CreateSaleInput) {
   if (input.items.length === 0) throw AppError.badRequest('A sale needs at least one item');
 
-  const farmer = await prisma.farmer.findFirst({ where: { id: input.farmerId, businessId } });
-  if (!farmer) throw AppError.notFound('Farmer not found');
+  // A walk-in sale has no farmer. Only validate one when it was actually given.
+  const farmer = input.farmerId
+    ? await prisma.farmer.findFirst({ where: { id: input.farmerId, businessId } })
+    : null;
+  if (input.farmerId && !farmer) throw AppError.notFound('Farmer not found');
 
   const products = await prisma.product.findMany({
     where: { id: { in: input.items.map((i) => i.productId) }, businessId },
@@ -62,7 +66,8 @@ export async function createSale(businessId: number, userId: number, input: Crea
     const created = await tx.sale.create({
       data: {
         businessId,
-        farmerId: input.farmerId,
+        farmerId: farmer ? farmer.id : null,
+        customerName: farmer ? null : input.customerName?.trim() || null,
         invoiceNumber,
         invoiceDate: parseBusinessDate(input.invoiceDate),
         dueDate: input.dueDate ? parseBusinessDate(input.dueDate) : null,
@@ -106,17 +111,21 @@ export async function createSale(businessId: number, userId: number, input: Crea
       });
     }
 
-    await recordLedgerEntry(tx, {
-      businessId,
-      partyType: PartyType.FARMER,
-      farmerId: input.farmerId,
-      direction: LedgerDirection.DEBIT,
-      amount: total,
-      relatedType: 'Sale',
-      relatedId: created.id,
-      description: `Sale ${invoiceNumber}`,
-      entryDate: created.invoiceDate,
-    });
+    // Only a registered farmer has a running account. A walk-in owes nothing
+    // on credit, so posting a ledger entry for them would invent a debtor.
+    if (farmer) {
+      await recordLedgerEntry(tx, {
+        businessId,
+        partyType: PartyType.FARMER,
+        farmerId: farmer.id,
+        direction: LedgerDirection.DEBIT,
+        amount: total,
+        relatedType: 'Sale',
+        relatedId: created.id,
+        description: `Sale ${invoiceNumber}`,
+        entryDate: created.invoiceDate,
+      });
+    }
 
     await writeAuditLog(tx, {
       businessId,
@@ -124,7 +133,7 @@ export async function createSale(businessId: number, userId: number, input: Crea
       action: 'CREATE',
       entityType: 'Sale',
       entityId: created.id,
-      afterData: { invoiceNumber, total: total.toString(), farmerId: input.farmerId },
+      afterData: { invoiceNumber, total: total.toString(), farmerId: farmer?.id ?? null, customerName: input.customerName ?? null },
     });
 
     let finalSale = created;
@@ -133,20 +142,54 @@ export async function createSale(businessId: number, userId: number, input: Crea
       const account = await tx.account.findFirst({ where: { id: input.initialPayment.accountId, businessId } });
       if (!account) throw AppError.notFound('Account not found');
 
-      const payment = await tx.farmerPayment.create({
-        data: {
+      // A registered farmer gets a FarmerPayment allocated to the invoice so
+      // it shows on their statement. A walk-in has no statement, so the money
+      // is booked straight to the account against the sale itself.
+      if (farmer) {
+        const payment = await tx.farmerPayment.create({
+          data: {
+            businessId,
+            farmerId: farmer.id,
+            accountId: input.initialPayment.accountId,
+            amount: initialPaymentAmount.toString(),
+            method: input.initialPayment.method,
+            notes: input.initialPayment.notes ?? `Initial payment on sale ${invoiceNumber}`,
+            createdByUserId: userId,
+          },
+        });
+        await tx.farmerPaymentAllocation.create({
+          data: { farmerPaymentId: payment.id, saleId: created.id, allocatedAmount: initialPaymentAmount.toString() },
+        });
+        await recordLedgerEntry(tx, {
           businessId,
-          farmerId: input.farmerId,
+          partyType: PartyType.FARMER,
+          farmerId: farmer.id,
+          direction: LedgerDirection.CREDIT,
+          amount: initialPaymentAmount,
+          relatedType: 'FarmerPayment',
+          relatedId: payment.id,
+          description: `Payment on sale ${invoiceNumber}`,
+        });
+        await recordAccountTransaction(tx, {
+          businessId,
           accountId: input.initialPayment.accountId,
-          amount: initialPaymentAmount.toString(),
-          method: input.initialPayment.method,
-          notes: input.initialPayment.notes ?? `Initial payment on sale ${invoiceNumber}`,
-          createdByUserId: userId,
-        },
-      });
-      await tx.farmerPaymentAllocation.create({
-        data: { farmerPaymentId: payment.id, saleId: created.id, allocatedAmount: initialPaymentAmount.toString() },
-      });
+          direction: LedgerDirection.CREDIT,
+          amount: initialPaymentAmount,
+          relatedType: 'FarmerPayment',
+          relatedId: payment.id,
+          description: `Payment on sale ${invoiceNumber}`,
+        });
+      } else {
+        await recordAccountTransaction(tx, {
+          businessId,
+          accountId: input.initialPayment.accountId,
+          direction: LedgerDirection.CREDIT,
+          amount: initialPaymentAmount,
+          relatedType: 'Sale',
+          relatedId: created.id,
+          description: `Counter sale ${invoiceNumber}`,
+        });
+      }
 
       finalSale = await tx.sale.update({
         where: { id: created.id },
@@ -155,27 +198,6 @@ export async function createSale(businessId: number, userId: number, input: Crea
           balance: total.minus(initialPaymentAmount).toString(),
           status: deriveStatus(total, initialPaymentAmount),
         },
-      });
-
-      await recordLedgerEntry(tx, {
-        businessId,
-        partyType: PartyType.FARMER,
-        farmerId: input.farmerId,
-        direction: LedgerDirection.CREDIT,
-        amount: initialPaymentAmount,
-        relatedType: 'FarmerPayment',
-        relatedId: payment.id,
-        description: `Payment on sale ${invoiceNumber}`,
-      });
-
-      await recordAccountTransaction(tx, {
-        businessId,
-        accountId: input.initialPayment.accountId,
-        direction: LedgerDirection.CREDIT,
-        amount: initialPaymentAmount,
-        relatedType: 'FarmerPayment',
-        relatedId: payment.id,
-        description: `Payment on sale ${invoiceNumber}`,
       });
     }
 

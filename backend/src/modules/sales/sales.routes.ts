@@ -40,7 +40,9 @@ const itemSchema = z.object({
 });
 
 const createSchema = z.object({
-  farmerId: z.number().int(),
+  // Optional: walk-in counter sales have no registered farmer.
+  farmerId: z.number().int().nullish(),
+  customerName: z.string().max(120).optional(),
   invoiceDate: z.string(),
   dueDate: z.string().optional(),
   discount: z.number().min(0).optional(),
