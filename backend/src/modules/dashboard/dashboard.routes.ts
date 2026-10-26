@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { DocumentStatus, TaskStatus } from '@prisma/client';
+import { ArrivalStatus, DocumentStatus, TaskStatus } from '@prisma/client';
 import { prisma } from '../../db/prisma';
 import { requireAuth } from '../../middleware/auth';
 import {
@@ -47,6 +47,8 @@ dashboardRouter.get('/', async (req, res, next) => {
       trendSales,
       trendExpenses,
       monthSaleItems,
+      finance,
+      pendingArrivals,
     ] = await Promise.all([
       analytics.getSalesTotal(businessId, today),
       analytics.getFarmerCollectionsTotal(businessId, today),
@@ -88,6 +90,15 @@ dashboardRouter.get('/', async (req, res, next) => {
       prisma.saleItem.findMany({
         where: { sale: { businessId, status: { not: DocumentStatus.VOID }, invoiceDate: { gte: month.from, lte: month.to } } },
         select: { quantity: true, lineTotal: true, product: { select: { name: true } } },
+      }),
+      analytics.getDebitCreditSummary(businessId),
+      // Ordered but not on the shelf yet. These deliberately contribute
+      // nothing to stock value or stock counts - they are not here.
+      prisma.purchase.findMany({
+        where: { businessId, arrivalStatus: { in: [ArrivalStatus.PENDING, ArrivalStatus.PARTIAL] } },
+        include: { supplier: { select: { name: true } } },
+        orderBy: [{ expectedArrivalDate: 'asc' }, { invoiceDate: 'asc' }],
+        take: 20,
       }),
     ]);
 
@@ -147,6 +158,19 @@ dashboardRouter.get('/', async (req, res, next) => {
         netProfit: monthProfit.netProfit.toFixed(2),
       },
       cashAndBank: totalCashAndBank.toFixed(2),
+      finance,
+      pendingArrivals: pendingArrivals.map((p) => ({
+        id: p.id,
+        invoiceNumber: p.invoiceNumber,
+        supplier: p.supplier.name,
+        total: p.total.toString(),
+        balance: p.balance.toString(),
+        status: p.status,
+        arrivalStatus: p.arrivalStatus,
+        invoiceDate: formatBusinessDate(p.invoiceDate),
+        expectedArrivalDate: p.expectedArrivalDate ? formatBusinessDate(p.expectedArrivalDate) : null,
+      })),
+      pendingArrivalCount: pendingArrivals.length,
       stockValue: stockValue.toFixed(2),
       totalFarmerReceivables: totalReceivables.toFixed(2),
       totalSupplierPayables: totalPayables.toFixed(2),
