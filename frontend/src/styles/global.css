@@ -13,24 +13,39 @@
    ========================================================================== */
 
 :root {
-  /* --- brand scale (hue ~152, "Zari green") --- */
-  --green-50: #edfcf3;
-  --green-100: #d3f8e2;
-  --green-200: #aaefc8;
-  --green-300: #71dfa5;
-  --green-400: #3bc880;
-  --green-500: #17ab63;
-  --green-600: #0c8a50;
-  --green-700: #0a6e42;
-  --green-800: #0b5736;
-  --green-900: #0a472e;
-  --green-950: #04291a;
+  /* --- brand scale, "Zari green" ------------------------------------------
+     Cut in OKLCH at a constant hue of 152 so the ramp stays the same green as
+     it lightens instead of drifting toward yellow the way an sRGB-interpolated
+     scale does. Chroma is pushed to the sRGB gamut edge through the mid-tones,
+     which is what makes the green read as alive rather than corporate-safe;
+     600 is the darkest step where white body text still clears WCAG AA, so it
+     is the one the primary button uses. 500 is the most saturated step that is
+     usable, and carries the accents, charts and badges. --- */
+  --green-50: #ecfcef;
+  --green-100: #d8f7df;
+  --green-200: #b6edc4;
+  --green-300: #8cdda2;
+  --green-400: #5cc87f;
+  --green-500: #26b260;
+  --green-600: #00863e;
+  --green-700: #007232;
+  --green-800: #005b27;
+  --green-900: #00451c;
+  --green-950: #00270d;
 
   /* --- accent: the "khata" side of the name — ledger gold, used sparingly --- */
-  --gold-300: #f6ce6a;
-  --gold-400: #eeb32e;
-  --gold-500: #d4950c;
-  --gold-600: #a97208;
+  --gold-300: #e7b551;
+  --gold-400: #d59d19;
+  --gold-500: #bd8800;
+  --gold-600: #986c00;
+  --gold-700: #735100;
+
+  /* --- red, hue 27: warm enough to sit beside the gold without clashing --- */
+  --red-300: #f2897e;
+  --red-400: #dc5148;
+  --red-500: #c7332f;
+  --red-600: #b32322;
+  --red-700: #991618;
 
   --font-sans: 'Segoe UI Variable Text', 'Segoe UI', -apple-system, BlinkMacSystemFont, Inter,
     system-ui, Roboto, 'Helvetica Neue', Arial, sans-serif;
@@ -56,114 +71,131 @@
 }
 
 /* --------------------------------- LIGHT --------------------------------- */
+/* The neutrals carry a real, measurable green cast (chroma 0.009-0.022 in
+   OKLCH, hue 165) rather than the rumour of one. Below about 0.008 the eye
+   cannot see a tint at all and the surface just reads as dirty grey - which is
+   what makes an almost-tinted palette look duller than an honestly grey one.
+   Cards are pure white and sit on a clearly darker page, so they have edges
+   without needing heavy borders. */
 :root,
 :root[data-theme='light'] {
   color-scheme: light;
 
-  --bg: #f4f7f5;
-  --bg-tint: radial-gradient(1200px 600px at 15% -10%, #e9f6ee 0%, transparent 60%);
+  --bg: #eef7f3;
+  --bg-tint: radial-gradient(1200px 620px at 12% -12%, rgba(38, 178, 96, 0.13) 0%, transparent 62%);
   --surface: #ffffff;
-  --surface-2: #f8faf9;
-  --surface-3: #eef2f0;
-  --surface-inset: #f3f6f4;
+  --surface-2: #f5fcf8;
+  --surface-3: #e9f3ee;
+  --surface-inset: #ebf5f0;
 
-  --border: #e2e8e5;
-  --border-strong: #cdd6d1;
-  --border-hairline: #eaefec;
+  --border: #d5e3dc;
+  --border-strong: #bdcfc6;
+  --border-hairline: #e3ece8;
 
-  --text: #0d1512;
-  --text-2: #4e5c56;
-  --text-3: #7a8882;
+  --text: #12261e;
+  --text-2: #4e5f57;
+  --text-3: #5e6d66;
   --text-on-brand: #ffffff;
 
   --brand: var(--green-600);
   --brand-hover: var(--green-700);
   --brand-active: var(--green-800);
   --brand-text: var(--green-700);
+  /* The vivid end of the ramp: charts, the logo tile, selection highlights -
+     anywhere the green is the subject rather than a background for text. */
+  --brand-vivid: var(--green-500);
   --brand-soft: var(--green-50);
   --brand-soft-2: var(--green-100);
   --brand-border: var(--green-200);
 
   --accent: var(--gold-500);
-  --accent-soft: #fdf4e0;
+  --accent-soft: #fff2d6;
 
-  --danger: #c22a1f;
-  --danger-text: #a8241a;
-  --danger-soft: #fdeceb;
-  --danger-border: #f6cfcc;
+  --danger: var(--red-600);
+  --danger-text: var(--red-700);
+  --danger-soft: #ffeae6;
+  --danger-border: #ffc8c0;
 
   --warning: var(--gold-600);
-  --warning-text: #8a5d08;
-  --warning-soft: #fdf5e3;
-  --warning-border: #f3e2b8;
+  --warning-text: var(--gold-700);
+  --warning-soft: #fff0d1;
+  --warning-border: #f9d696;
 
   --success: var(--green-600);
   --success-text: var(--green-700);
   --success-soft: var(--green-50);
   --success-border: var(--green-200);
 
-  --ring: color-mix(in srgb, var(--green-500) 38%, transparent);
+  --ring: color-mix(in srgb, var(--green-500) 40%, transparent);
 
-  --shadow-xs: 0 1px 2px rgba(13, 38, 26, 0.05);
-  --shadow-sm: 0 1px 2px rgba(13, 38, 26, 0.06), 0 1px 3px rgba(13, 38, 26, 0.04);
-  --shadow-md: 0 1px 2px rgba(13, 38, 26, 0.04), 0 10px 24px -8px rgba(13, 38, 26, 0.12);
-  --shadow-lg: 0 2px 6px rgba(13, 38, 26, 0.06), 0 30px 70px -16px rgba(13, 38, 26, 0.24);
+  /* Shadows are tinted with the brand's own dark green rather than neutral
+     black, and are deep enough to actually see - the old ones were at 4-6%
+     alpha, which left every card floating on nothing. */
+  --shadow-xs: 0 1px 2px rgba(0, 39, 13, 0.06);
+  --shadow-sm: 0 1px 2px rgba(0, 39, 13, 0.07), 0 2px 5px -1px rgba(0, 39, 13, 0.06);
+  --shadow-md: 0 1px 2px rgba(0, 39, 13, 0.06), 0 12px 26px -8px rgba(0, 39, 13, 0.16);
+  --shadow-lg: 0 2px 6px rgba(0, 39, 13, 0.08), 0 32px 72px -16px rgba(0, 39, 13, 0.3);
 
   /* Logo tokens, read by Logo.tsx */
   --brand-counter: var(--surface);
-  --brand-tile-from: #2bc273;
-  --brand-tile-to: #0c8a50;
-  --brand-tile-counter: #073d25;
+  --brand-tile-from: #52cd7d;
+  --brand-tile-to: #00873b;
+  --brand-tile-counter: #00270d;
 }
 
 /* ---------------------------------- DARK --------------------------------- */
+/* Not an inversion. The surfaces step up in even, visible lightness increments
+   (dL ~0.04-0.05 in OKLCH) so stacked panels read as depth instead of noise,
+   and they keep the same hue-165 green cast as light mode so the product feels
+   like one thing in both. The brand lifts to L=0.66 because the light-mode
+   green is unreadable on a dark field. */
 :root[data-theme='dark'] {
   color-scheme: dark;
 
-  --bg: #090d0b;
-  --bg-tint: radial-gradient(1100px 560px at 12% -12%, rgba(23, 171, 99, 0.13) 0%, transparent 62%);
-  --surface: #111715;
-  --surface-2: #161d1a;
-  --surface-3: #1d2622;
-  --surface-inset: #0d1211;
+  --bg: #0a130f;
+  --bg-tint: radial-gradient(1100px 580px at 10% -12%, rgba(40, 173, 94, 0.16) 0%, transparent 60%);
+  --surface: #151f1a;
+  --surface-2: #1d2924;
+  --surface-3: #28352f;
+  --surface-inset: #0f1713;
 
-  --border: #222c28;
-  --border-strong: #35423c;
-  --border-hairline: #1b2420;
+  --border: #2c3b34;
+  --border-strong: #42554c;
+  --border-hairline: #222e29;
 
-  --text: #e8efeb;
-  --text-2: #9dada6;
-  --text-3: #6e7e77;
-  --text-on-brand: #ffffff;
+  --text: #e5f1eb;
+  --text-2: #abbdb4;
+  --text-3: #8da197;
+  --text-on-brand: #00270d;
 
-  /* Lifted + slightly desaturated so it carries on a dark field. */
-  --brand: #17a660;
-  --brand-hover: #1cbd6e;
-  --brand-active: #23cf7a;
-  --brand-text: #51d894;
-  --brand-soft: rgba(23, 171, 99, 0.13);
-  --brand-soft-2: rgba(23, 171, 99, 0.2);
-  --brand-border: rgba(59, 200, 128, 0.3);
+  --brand: #28ad5e;
+  --brand-hover: #3cbb6c;
+  --brand-active: #59c87e;
+  --brand-text: #76d894;
+  --brand-vivid: #3cbb6c;
+  --brand-soft: rgba(40, 173, 94, 0.15);
+  --brand-soft-2: rgba(40, 173, 94, 0.24);
+  --brand-border: rgba(92, 200, 127, 0.32);
 
-  --accent: var(--gold-400);
-  --accent-soft: rgba(238, 179, 46, 0.14);
+  --accent: #dda734;
+  --accent-soft: rgba(221, 167, 52, 0.15);
 
-  --danger: #dc4740;
-  --danger-text: #ff8882;
-  --danger-soft: rgba(220, 71, 64, 0.14);
-  --danger-border: rgba(220, 71, 64, 0.32);
+  --danger: #e15a50;
+  --danger-text: #f88a7f;
+  --danger-soft: rgba(225, 90, 80, 0.16);
+  --danger-border: rgba(225, 90, 80, 0.34);
 
-  --warning: var(--gold-400);
-  --warning-text: #f3c468;
-  --warning-soft: rgba(238, 179, 46, 0.13);
-  --warning-border: rgba(238, 179, 46, 0.28);
+  --warning: #dda734;
+  --warning-text: #ebbc63;
+  --warning-soft: rgba(221, 167, 52, 0.15);
+  --warning-border: rgba(221, 167, 52, 0.3);
 
-  --success: #1cbd6e;
-  --success-text: #51d894;
-  --success-soft: rgba(23, 171, 99, 0.14);
-  --success-border: rgba(59, 200, 128, 0.3);
+  --success: #3cbb6c;
+  --success-text: #76d894;
+  --success-soft: rgba(40, 173, 94, 0.16);
+  --success-border: rgba(92, 200, 127, 0.32);
 
-  --ring: color-mix(in srgb, #3bc880 45%, transparent);
+  --ring: color-mix(in srgb, #5cc87f 48%, transparent);
 
   --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.5);
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.55), 0 1px 3px rgba(0, 0, 0, 0.35);
@@ -171,9 +203,9 @@
   --shadow-lg: 0 4px 12px rgba(0, 0, 0, 0.5), 0 34px 80px -18px rgba(0, 0, 0, 0.78);
 
   --brand-counter: var(--surface);
-  --brand-tile-from: #35d184;
-  --brand-tile-to: #0c8a50;
-  --brand-tile-counter: #062f1d;
+  --brand-tile-from: #52cd7d;
+  --brand-tile-to: #00873b;
+  --brand-tile-counter: #00270d;
 }
 
 /* ================================== BASE ================================== */
@@ -1538,19 +1570,19 @@ table.data-table {
 }
 .chart-svg .line-sales {
   fill: none;
-  stroke: var(--brand);
+  stroke: var(--brand-vivid);
   stroke-width: 2.2;
   stroke-linejoin: round;
   stroke-linecap: round;
 }
 .chart-svg .dot-sales {
   fill: var(--surface);
-  stroke: var(--brand);
+  stroke: var(--brand-vivid);
   stroke-width: 1.8;
 }
 .chart-svg .bar-expense {
   fill: var(--accent);
-  opacity: 0.45;
+  opacity: 0.55;
 }
 .chart-svg .bar-expense:hover {
   opacity: 0.75;
@@ -1570,13 +1602,13 @@ table.data-table {
 }
 .donut-track {
   fill: none;
-  stroke: var(--danger);
+  stroke: var(--red-400);
   stroke-width: 15;
-  opacity: 0.55;
+  opacity: 0.9;
 }
 .donut-rec {
   fill: none;
-  stroke: var(--brand);
+  stroke: var(--brand-vivid);
   stroke-width: 15;
   stroke-linecap: butt;
 }
@@ -2382,4 +2414,518 @@ select option {
   height: 16px;
   accent-color: var(--brand);
   cursor: pointer;
+}
+
+/* ============================= PARTY DETAIL ============================== */
+
+.party-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border-hairline);
+}
+.party-meta {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.party-meta span::before {
+  content: '';
+  display: inline-block;
+  width: 4px;
+  height: 4px;
+  border-radius: var(--r-full);
+  background: var(--text-3);
+  margin-right: 8px;
+  vertical-align: middle;
+}
+.party-meta span:first-child::before {
+  display: none;
+}
+
+/* Print split-button: one control, two paper sizes. */
+.print-split {
+  position: relative;
+  display: inline-block;
+}
+.print-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  min-width: 150px;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-md);
+}
+.print-menu button {
+  border: 0;
+  background: none;
+  text-align: left;
+  padding: 7px 10px;
+  font-size: 13px;
+  color: var(--text);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.print-menu button:hover {
+  background: var(--brand-soft);
+  color: var(--brand-text);
+}
+
+/* The detail view carries a lot; let it use the width it needs. */
+.modal {
+  max-width: 920px;
+}
+
+/* A sale with no registered customer. */
+.walkin-tag {
+  font-size: 13px;
+  color: var(--text-2);
+  font-style: italic;
+}
+
+/* Salary advance already drawn - shown as a deduction. */
+.advance-tag {
+  color: var(--warning-text);
+  font-weight: 600;
+}
+
+/* A small working-out block: salary less what has already been taken, the
+   party balance before and after a payment. Rows of label/number pairs. */
+.callout {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 12px 14px;
+  font-size: 13px;
+}
+
+.row-between {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 3px 0;
+}
+
+.row-between > span:last-child {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.callout .row-between + .row-between[style*='600'] {
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+  padding-top: 7px;
+}
+
+/* Checkbox beside a label that carries its own explanatory line, so the box
+   lines up with the first line of text rather than the middle of the block. */
+.check-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--text);
+  max-width: 560px;
+}
+
+.check-row input {
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  flex: none;
+  accent-color: var(--brand);
+  cursor: pointer;
+}
+
+.check-row .hint {
+  font-weight: 400;
+  margin-top: 2px;
+}
+
+/* ========================= SEARCHABLE PRODUCT PICKER ===================== */
+
+.combo {
+  position: relative;
+  display: block;
+}
+
+.combo-icon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-3);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.combo.open .combo-icon {
+  color: var(--brand);
+}
+
+/* Inherits the shared `.field input` look; only the icon gutter is new. */
+.combo .combo-input {
+  width: 100%;
+  padding-left: 32px;
+  padding-right: 30px;
+  text-overflow: ellipsis;
+}
+
+/* Shown instead of the value when the box is open and empty, so the chosen
+   product stays readable while a new search is typed over it. */
+.combo.open .combo-input::placeholder {
+  color: var(--text-3);
+}
+
+.combo-clear {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+}
+
+.combo-clear:hover {
+  background: var(--surface-inset);
+  color: var(--text);
+}
+
+/* Takes the browser's "please fill this in" bubble. Focusable on purpose -
+   a display:none control makes the form silently unsubmittable instead. */
+.combo .combo-validity {
+  position: absolute;
+  left: 14px;
+  bottom: 2px;
+  width: 1px;
+  height: 1px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.combo-list {
+  position: absolute;
+  z-index: 60;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 264px;
+  overflow-y: auto;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-lg);
+}
+
+.combo-option {
+  display: block;
+  width: 100%;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.combo-option.active {
+  background: var(--brand-soft);
+}
+
+.combo-option-name {
+  display: block;
+  font-size: 13.5px;
+  font-weight: 550;
+  line-height: 1.3;
+}
+
+.combo-option-meta {
+  display: block;
+  margin-top: 1px;
+  font-size: 11.5px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.combo-option-meta.out {
+  color: var(--danger-text);
+}
+
+.combo-empty {
+  padding: 12px 10px;
+  font-size: 13px;
+  color: var(--text-3);
+  text-align: center;
+}
+
+/* ===================== ORDER ARRIVAL & FINANCE PANEL ==================== */
+
+/* Two mutually exclusive answers to one question, bigger than a radio button
+   because the choice changes what the whole form means. */
+.seg-choice {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.seg-choice button {
+  display: block;
+  padding: 10px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13.5px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.13s var(--ease), background-color 0.13s var(--ease);
+}
+
+.seg-choice button span {
+  display: block;
+  margin-top: 2px;
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--text-3);
+}
+
+.seg-choice button:hover {
+  border-color: var(--text-3);
+}
+
+.seg-choice button.active {
+  border-color: var(--brand);
+  background: var(--brand-soft);
+  box-shadow: 0 0 0 1px var(--brand);
+}
+
+.seg-choice button.active span {
+  color: var(--brand-text);
+}
+
+/* Numeric entry sitting inside a table cell rather than a labelled field. */
+.cell-input {
+  width: 84px;
+  padding: 5px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  background-color: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.cell-input.wide {
+  width: 148px;
+  text-align: left;
+}
+
+.cell-input:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px var(--ring);
+}
+
+.receive-table td,
+.receive-table th {
+  vertical-align: middle;
+}
+
+/* Farmers owed vs suppliers owing, side by side. */
+.ledger-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin-bottom: 10px;
+}
+
+.ledger-split .list-plain li {
+  font-size: 13px;
+}
+
+/* ----------------------------- responsive ----------------------------- */
+
+@media (max-width: 860px) {
+  .ledger-split,
+  .seg-choice {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  /* A modal is nearly the whole screen on a phone; the old 48px top gutter
+     wasted a third of it and pushed the action buttons below the fold. */
+  .modal-backdrop {
+    padding: 12px 10px 24px;
+  }
+  .modal {
+    padding: 16px 14px;
+  }
+  .form-grid {
+    /* Every form in the app sets its own column template inline for desktop;
+       on a phone they all collapse to one column so fields never overlap. */
+    grid-template-columns: 1fr !important;
+  }
+  .page-header {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .btn-row {
+    flex-wrap: wrap;
+  }
+  .cell-input,
+  .cell-input.wide {
+    width: 100%;
+    min-width: 72px;
+  }
+  .stat-grid {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  }
+}
+
+/* ======================= RESPONSIVE: TABLES & TOUCH ====================== */
+/*
+   Every table in the app is markup of the form
+   <div class="card" style="padding:0; overflow-x:auto"><table class="data-table">,
+   so the scroller is styled through :has() rather than by adding a class to
+   thirteen call sites. Where :has() is unsupported the table still scrolls -
+   it just loses the edge hint.
+
+   A shop's tables are wide by nature (date, party, ref, three money columns,
+   status, actions). Stacking them into cards on a phone would bury the
+   numbers, so instead the row stays a row and scrolls sideways, with the
+   first column pinned so you never lose track of whose row you are reading.
+*/
+
+.card:has(> .data-table) {
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  overscroll-behavior-x: contain;
+}
+
+@media (max-width: 860px) {
+  .data-table th,
+  .data-table td {
+    padding: 9px 10px;
+    font-size: 12.5px;
+    /* Without this a narrow viewport wraps every cell into a three-line
+       column and the row heights go ragged; sideways scroll is the
+       controlled alternative. */
+    white-space: nowrap;
+  }
+
+  /* The name column stays put while the money columns scroll past it. */
+  .data-table th:first-child,
+  .data-table td:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: var(--surface);
+    box-shadow: 1px 0 0 var(--border-hairline);
+  }
+  .data-table th:first-child {
+    z-index: 3;
+    background: var(--surface-2);
+  }
+  .data-table tbody tr:hover td:first-child {
+    background: var(--surface-2);
+  }
+
+  /* Cells holding their own stacked note (a badge plus a muted line) must be
+     allowed to breathe, or the note is clipped by the nowrap above. */
+  .data-table td .cell-muted,
+  .data-table td > div {
+    white-space: normal;
+  }
+}
+
+@media (max-width: 760px) {
+  /* Comfortable touch targets without changing the desktop density. */
+  .btn {
+    min-height: 38px;
+  }
+  .btn.small {
+    min-height: 34px;
+  }
+  .btn.icon-only {
+    min-width: 34px;
+  }
+  .sidebar-link {
+    min-height: 40px;
+  }
+  /* The nav is a horizontal strip on a phone; its scrollbar is noise. */
+  .sidebar-nav {
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .sidebar-nav::-webkit-scrollbar {
+    display: none;
+  }
+  .topbar-title {
+    font-size: 15px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* A long shop name must not shove the theme toggle and Log out off-screen. */
+  .topbar-actions {
+    flex: none;
+  }
+  .section-label {
+    margin-top: 18px;
+  }
+}
+
+/* Phone held sideways: ~375px tall, so a modal that starts 48px down and
+   centres its content leaves almost nothing visible. */
+@media (max-height: 520px) {
+  .modal-backdrop {
+    padding: 8px 10px 16px;
+  }
+  .modal {
+    padding: 14px;
+  }
+}
+
+/* Tablet portrait: the sidebar is still vertical here, so the two-column
+   dashboard panels get too cramped to read before the 1100px rule applies. */
+@media (max-width: 1024px) {
+  .chart-grid,
+  .chart-grid.narrow,
+  .settings-layout,
+  .ledger-split {
+    grid-template-columns: 1fr;
+  }
 }
