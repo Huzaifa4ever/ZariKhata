@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { DocumentStatus, PaymentMethod } from '@prisma/client';
+import { ArrivalStatus, DocumentStatus, PaymentMethod } from '@prisma/client';
 import { requireAuth } from '../../middleware/auth';
 import * as purchasesService from './purchases.service';
 
@@ -13,6 +13,7 @@ purchaseRouter.get('/', async (req, res, next) => {
     const purchases = await purchasesService.listPurchases(req.businessId!, {
       supplierId: q.supplierId ? Number(q.supplierId) : undefined,
       status: q.status as DocumentStatus | undefined,
+      arrivalStatus: q.arrivalStatus as ArrivalStatus | undefined,
       from: typeof q.from === 'string' ? q.from : undefined,
       to: typeof q.to === 'string' ? q.to : undefined,
       q: typeof q.q === 'string' ? q.q : undefined,
@@ -44,6 +45,8 @@ const itemSchema = z.object({
 
 const createSchema = z.object({
   supplierId: z.number().int(),
+  isOrder: z.boolean().optional(),
+  expectedArrivalDate: z.string().optional(),
   supplierInvoiceNumber: z.string().optional(),
   invoiceDate: z.string(),
   dueDate: z.string().optional(),
@@ -65,6 +68,49 @@ purchaseRouter.post('/', async (req, res, next) => {
     const data = createSchema.parse(req.body);
     const purchase = await purchasesService.createPurchase(req.businessId!, req.user!.id, data);
     res.status(201).json(purchase);
+  } catch (err) {
+    next(err);
+  }
+});
+
+const receiveSchema = z.object({
+  receivedDate: z.string().optional(),
+  notes: z.string().optional(),
+  closeOrder: z.boolean().optional(),
+  idempotencyKey: z.string().max(80).optional(),
+  items: z
+    .array(
+      z.object({
+        purchaseItemId: z.number().int(),
+        quantityAccepted: z.number().min(0),
+        quantityRejected: z.number().min(0).optional(),
+        expiryDate: z.string().optional(),
+        batchNumber: z.string().optional(),
+        notes: z.string().optional(),
+      }),
+    )
+    .min(1),
+});
+
+/** Confirm an order has turned up. The only route that stocks ordered goods. */
+purchaseRouter.post('/:id/receive', async (req, res, next) => {
+  try {
+    const data = receiveSchema.parse(req.body);
+    const purchase = await purchasesService.receivePurchase(
+      req.businessId!,
+      req.user!.id,
+      Number(req.params.id),
+      data,
+    );
+    res.json(purchase);
+  } catch (err) {
+    next(err);
+  }
+});
+
+purchaseRouter.get('/:id/receipts', async (req, res, next) => {
+  try {
+    res.json(await purchasesService.listPurchaseReceipts(req.businessId!, Number(req.params.id)));
   } catch (err) {
     next(err);
   }
