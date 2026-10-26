@@ -76,6 +76,7 @@ export function ProductsPage() {
                 <th>Unit</th>
                 <th>Stock</th>
                 <th>Selling Price</th>
+                <th>Added by</th>
                 <th>Flags</th>
                 <th></th>
               </tr>
@@ -93,6 +94,7 @@ export function ProductsPage() {
                   <td>{p.unit}</td>
                   <td>{formatQty(p.currentStock)}</td>
                   <td>{formatMoney(p.sellingPrice)}</td>
+                  <td className="cell-muted">{p.createdByUser?.name ?? '-'}</td>
                   <td>
                     {p.isOutOfStock && <span className="badge unpaid">Out of stock</span>}{' '}
                     {!p.isOutOfStock && p.isLowStock && <span className="badge partial">Low</span>}{' '}
