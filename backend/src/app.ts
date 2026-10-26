@@ -7,6 +7,7 @@ import { ZodError } from 'zod';
 import { env } from './config/env';
 import { AppError } from './lib/errors';
 import { authRouter } from './modules/auth/auth.routes';
+import { salaryRouter } from './modules/salaries/salaries.routes';
 import { adminRouter } from './modules/admin/admin.routes';
 import { setupRouter } from './modules/setup/setup.routes';
 import { businessRouter } from './modules/business/business.routes';
@@ -88,6 +89,7 @@ export function createApp() {
   app.use('/api/accounts', accountRouter);
   app.use('/api/tasks', taskRouter);
   app.use('/api/reports', reportRouter);
+  app.use('/api/salaries', salaryRouter);
   app.use('/api/admin', adminRouter);
   app.use('/api/dashboard', dashboardRouter);
 
