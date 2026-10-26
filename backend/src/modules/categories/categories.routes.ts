@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../../db/prisma';
-import { requireAuth } from '../../middleware/auth';
+import { requireAuth, requireRole } from '../../middleware/auth';
 import { AppError } from '../../lib/errors';
 
 export const categoryRouter = Router();
@@ -35,7 +35,10 @@ categoryRouter.post('/', async (req, res, next) => {
   }
 });
 
-categoryRouter.patch('/:id', async (req, res, next) => {
+// Owner-only: correcting an existing record changes history (a price, an
+// opening balance, a name on an invoice already printed). Employees create
+// records and take payments; only the owner rewrites them.
+categoryRouter.patch('/:id', requireRole('OWNER'), async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     const { name } = createSchema.parse(req.body);
