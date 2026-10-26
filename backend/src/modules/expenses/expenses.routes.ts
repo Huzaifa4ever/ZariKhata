@@ -45,7 +45,11 @@ expenseRouter.get('/', async (req, res, next) => {
           ? { expenseDate: { ...(from ? { gte: parseBusinessDate(from) } : {}), ...(to ? { lte: parseBusinessDateEnd(to) } : {}) } }
           : {}),
       },
-      include: { category: true, account: true },
+      include: {
+        category: true,
+        account: true,
+        forUser: { select: { id: true, name: true, role: true } },
+      },
       orderBy: { expenseDate: 'desc' },
     });
     res.json(expenses);
@@ -60,7 +64,37 @@ const createSchema = z.object({
   amount: z.number().positive(),
   expenseDate: z.string().optional(),
   description: z.string().optional(),
+  /// Who the money was spent on. Defaults to whoever is recording it.
+  forUserId: z.number().int().optional(),
+  /// Employee personal spending, recovered from their salary at month end.
+  deductFromSalary: z.boolean().optional(),
 });
+
+/**
+ * Resolve and vet the person an expense is booked against.
+ *
+ * Every expense belongs to somebody, so this never returns null - it falls
+ * back to whoever is recording it. An employee may only book against
+ * themselves; letting one push their own spending onto a colleague would
+ * undo the point of attributing it at all.
+ */
+async function resolveForUser(
+  businessId: number,
+  actor: { id: number; role: string },
+  forUserId: number | undefined,
+  deductFromSalary: boolean,
+) {
+  const targetId = forUserId ?? actor.id;
+  if (actor.role !== 'OWNER' && targetId !== actor.id) {
+    throw AppError.forbidden('You can only record expenses against your own name.');
+  }
+  const target = await prisma.user.findFirst({ where: { id: targetId, businessId } });
+  if (!target) throw AppError.notFound('That person was not found.');
+  if (deductFromSalary && target.role !== 'EMPLOYEE') {
+    throw AppError.badRequest('Only an employee\'s expense can be deducted from a salary.');
+  }
+  return { id: target.id, deductFromSalary };
+}
 
 expenseRouter.post('/', async (req, res, next) => {
   try {
@@ -69,6 +103,12 @@ expenseRouter.post('/', async (req, res, next) => {
     if (!category) throw AppError.notFound('Expense category not found');
     const account = await prisma.account.findFirst({ where: { id: data.accountId, businessId: req.businessId! } });
     if (!account) throw AppError.notFound('Account not found');
+    const forUser = await resolveForUser(
+      req.businessId!,
+      req.user!,
+      data.forUserId,
+      data.deductFromSalary ?? false,
+    );
 
     const expense = await runInTransaction(async (tx) => {
       const created = await tx.expense.create({
@@ -80,6 +120,8 @@ expenseRouter.post('/', async (req, res, next) => {
           expenseDate: data.expenseDate ? parseBusinessDate(data.expenseDate) : new Date(),
           description: data.description,
           createdByUserId: req.user!.id,
+          forUserId: forUser.id,
+          deductFromSalary: forUser.deductFromSalary,
         },
       });
       await recordAccountTransaction(tx, {
