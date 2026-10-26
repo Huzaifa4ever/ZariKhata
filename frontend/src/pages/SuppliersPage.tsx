@@ -5,13 +5,14 @@ import { formatMoney } from '../lib/format';
 import { LoadingState, ErrorBanner, EmptyState } from '../components/StatusBits';
 import { Modal } from '../components/Modal';
 import { DeleteButton } from '../components/DeleteButton';
-import { IconProducts, IconClose } from '../components/icons';
+import { IconClose } from '../components/icons';
 import { EditButton } from '../components/EditButton';
+import { PartyDetail, type PartyRef } from '../components/PartyDetail';
 
 export function SuppliersPage() {
   const [q, setQ] = useState('');
   const [showCreate, setShowCreate] = useState(false);
-  const [catalogueFor, setCatalogueFor] = useState<{ id: number; name: string } | null>(null);
+  const [detail, setDetail] = useState<PartyRef | null>(null);
   const qc = useQueryClient();
   const { data, isLoading, error } = useQuery({ queryKey: ['suppliers', q], queryFn: () => api.listSuppliers(q || undefined) });
 
@@ -45,19 +46,16 @@ export function SuppliersPage() {
             <tbody>
               {data.map((s) => (
                 <tr key={s.id}>
-                  <td>{s.name}</td>
+                  <td>
+                    <button className="link-cell" onClick={() => setDetail({ id: s.id, kind: 'SUPPLIER', name: s.name })}>
+                      {s.name}
+                    </button>
+                  </td>
                   <td>{s.type ?? '-'}</td>
                   <td>{s.phone ?? '-'}</td>
                   <td className="text-right">{formatMoney(s.outstandingBalance)}</td>
                   <td>
                     <div className="row" style={{ gap: 4, justifyContent: 'flex-end' }}>
-                    <button
-                      className="btn secondary small"
-                      onClick={() => setCatalogueFor({ id: s.id, name: s.name })}
-                    >
-                      <IconProducts size={14} />
-                      What we buy
-                    </button>
                     <EditButton
                       title={s.name}
                       fields={[
@@ -91,9 +89,7 @@ export function SuppliersPage() {
         </div>
       )}
 
-      {catalogueFor && (
-        <SupplierCatalogue supplier={catalogueFor} onClose={() => setCatalogueFor(null)} />
-      )}
+      {detail && <PartyDetail party={detail} onClose={() => setDetail(null)} />}
 
       {showCreate && (
         <CreateSupplierModal
@@ -181,92 +177,3 @@ function CreateSupplierModal({ onClose, onCreated }: { onClose: () => void; onCr
  * "I buy this at 450 and sell at 500 - is that still true?", and that answer
  * lives in two different tables until something puts them next to each other.
  */
-function SupplierCatalogue({ supplier, onClose }: { supplier: { id: number; name: string }; onClose: () => void }) {
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['supplier-catalogue', supplier.id],
-    queryFn: () => api.getSupplierCatalogue(supplier.id),
-  });
-
-  const rows = data?.rows ?? [];
-  const totalSpend = rows.reduce((sum, r) => sum + Number(r.lastCost) * Number(r.totalQuantity), 0);
-
-  return (
-    <Modal title={`What we buy from ${supplier.name}`} onClose={onClose}>
-      {isLoading && <LoadingState />}
-      {error && <ErrorBanner message="Could not load this supplier's products." />}
-
-      {data && rows.length === 0 && (
-        <EmptyState label={`No purchases recorded from ${supplier.name} yet. Record a purchase and it will show up here.`} />
-      )}
-
-      {rows.length > 0 && (
-        <>
-          <div className="stat-grid" style={{ marginBottom: 4 }}>
-            <div className="stat-card">
-              <div className="label">Products</div>
-              <div className="value">{rows.length}</div>
-            </div>
-            <div className="stat-card">
-              <div className="label">Bought so far</div>
-              <div className="value">{formatMoney(totalSpend)}</div>
-              <div className="hint">At the latest price each</div>
-            </div>
-          </div>
-
-          <div className="card" style={{ padding: 0, overflowX: 'auto' }}>
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Product</th>
-                  <th className="text-right">You pay</th>
-                  <th className="text-right">You sell</th>
-                  <th className="text-right">Profit</th>
-                  <th className="text-right">Margin</th>
-                  <th className="text-right">Ordered</th>
-                  <th>Last order</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r) => {
-                  const margin = Number(r.marginPercent);
-                  const cls = margin <= 0 ? 'margin-loss' : margin < 10 ? 'margin-thin' : 'margin-good';
-                  return (
-                    <tr key={r.productId}>
-                      <td>
-                        {r.name}
-                        <div className="cell-muted" style={{ fontSize: 11.5 }}>{r.sku}</div>
-                      </td>
-                      <td className="text-right">{formatMoney(r.lastCost)}</td>
-                      <td className="text-right">{formatMoney(r.sellingPrice)}</td>
-                      <td className={`text-right ${cls}`}>{formatMoney(r.profit)}</td>
-                      <td className={`text-right ${cls}`}>{margin}%</td>
-                      <td className="text-right">
-                        {r.totalQuantity} {r.unit}
-                        <div className="cell-muted" style={{ fontSize: 11.5 }}>
-                          {r.timesOrdered}x
-                        </div>
-                      </td>
-                      <td className="cell-muted">{r.lastOrdered}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          <p className="muted-3" style={{ fontSize: 12, marginTop: 10 }}>
-            "You pay" is the price on their most recent invoice. Margin is profit as a share of your selling
-            price - anything under 10% is flagged.
-          </p>
-        </>
-      )}
-
-      <div className="btn-row" style={{ justifyContent: 'flex-end', marginTop: 14 }}>
-        <button className="btn secondary" onClick={onClose}>
-          <IconClose size={15} />
-          Close
-        </button>
-      </div>
-    </Modal>
-  );
-}

@@ -6,10 +6,12 @@ import { LoadingState, ErrorBanner, EmptyState } from '../components/StatusBits'
 import { Modal } from '../components/Modal';
 import { DeleteButton } from '../components/DeleteButton';
 import { EditButton } from '../components/EditButton';
+import { PartyDetail, type PartyRef } from '../components/PartyDetail';
 
 export function FarmersPage() {
   const [q, setQ] = useState('');
   const [showCreate, setShowCreate] = useState(false);
+  const [detail, setDetail] = useState<PartyRef | null>(null);
   const qc = useQueryClient();
   const { data, isLoading, error } = useQuery({ queryKey: ['farmers', q], queryFn: () => api.listFarmers(q || undefined) });
 
@@ -43,7 +45,11 @@ export function FarmersPage() {
             <tbody>
               {data.map((f) => (
                 <tr key={f.id}>
-                  <td>{f.name}</td>
+                  <td>
+                    <button className="link-cell" onClick={() => setDetail({ id: f.id, kind: 'FARMER', name: f.name })}>
+                      {f.name}
+                    </button>
+                  </td>
                   <td>{f.phone ?? '-'}</td>
                   <td>{f.village ?? '-'}</td>
                   <td className="text-right">
@@ -90,6 +96,8 @@ export function FarmersPage() {
           </table>
         </div>
       )}
+
+      {detail && <PartyDetail party={detail} onClose={() => setDetail(null)} />}
 
       {showCreate && (
         <CreateFarmerModal
