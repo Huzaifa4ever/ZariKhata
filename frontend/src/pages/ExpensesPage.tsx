@@ -6,9 +6,22 @@ import { LoadingState, ErrorBanner, EmptyState } from '../components/StatusBits'
 import type { Account, Expense } from '../api/types';
 import { DeleteButton } from '../components/DeleteButton';
 import { EditButton } from '../components/EditButton';
+import { useAuth } from '../auth/AuthContext';
 
+/**
+ * Every expense is booked against a person - the owner, or a named employee -
+ * so a cost can always be traced back to who it was spent on.
+ *
+ * An employee's *personal* spending can be marked "deduct from salary". It is
+ * still a real expense the day it happens (the shop's money left), and at the
+ * end of the month it comes off that employee's pay on the Salaries page.
+ */
 export function ExpensesPage() {
   const qc = useQueryClient();
+  const { user: me } = useAuth();
+  const isOwner = me?.role === 'OWNER';
+  // Only the owner can list staff; an employee books against themselves anyway.
+  const { data: users } = useQuery({ queryKey: ['users'], queryFn: api.listUsers, enabled: isOwner });
   const { data: categories } = useQuery({ queryKey: ['expense-categories'], queryFn: api.listExpenseCategories });
   const { data: accounts } = useQuery({ queryKey: ['accounts'], queryFn: api.listAccounts });
   const { data: expenses, isLoading, error } = useQuery({ queryKey: ['expenses'], queryFn: () => api.listExpenses() });
@@ -18,6 +31,8 @@ export function ExpensesPage() {
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
   const [expenseDate, setExpenseDate] = useState(todayIsoDate());
+  const [forUserId, setForUserId] = useState<number | ''>('');
+  const [deductFromSalary, setDeductFromSalary] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -30,6 +45,9 @@ export function ExpensesPage() {
     },
   });
 
+  const selectedUser = (users ?? []).find((u) => u.id === forUserId);
+  const selectedIsEmployee = selectedUser?.role === 'EMPLOYEE';
+
   const mutation = useMutation({
     mutationFn: () =>
       api.createExpense({
@@ -38,13 +56,15 @@ export function ExpensesPage() {
         amount: Number(amount),
         expenseDate: expenseDate || todayIsoDate(),
         description: description || undefined,
+        forUserId: forUserId || undefined,
+        deductFromSalary,
       }),
     onSuccess: () => {
       setAmount('');
       setDescription('');
+      setDeductFromSalary(false);
       setExpenseDate(todayIsoDate());
-      qc.invalidateQueries({ queryKey: ['expenses'] });
-      qc.invalidateQueries({ queryKey: ['dashboard'] });
+      for (const k of ['expenses', 'dashboard', 'accounts', 'payroll']) qc.invalidateQueries({ queryKey: [k] });
     },
     onError: (e) => setFormError(e instanceof Error ? e.message : 'Could not record expense'),
   });
@@ -98,10 +118,53 @@ export function ExpensesPage() {
               </select>
             </div>
             <div className="field">
+              <label htmlFor="exp-for">Spent on</label>
+              <select
+                id="exp-for"
+                value={forUserId}
+                disabled={!isOwner}
+                onChange={(e) => {
+                  const v = e.target.value ? Number(e.target.value) : '';
+                  setForUserId(v);
+                  const picked = (users ?? []).find((u) => u.id === v);
+                  if (picked?.role !== 'EMPLOYEE') setDeductFromSalary(false);
+                }}
+              >
+                <option value="">{me?.name ?? 'Me'} (you)</option>
+                {(users ?? [])
+                  .filter((u) => u.id !== me?.id)
+                  .map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.name} ({u.role === 'OWNER' ? 'Owner' : 'Employee'})
+                    </option>
+                  ))}
+              </select>
+              <span className="hint">
+                {isOwner ? 'Who the money was spent on.' : 'Recorded against your name.'}
+              </span>
+            </div>
+            <div className="field">
               <label>Description</label>
               <input value={description} onChange={(e) => setDescription(e.target.value)} />
             </div>
           </div>
+
+          {selectedIsEmployee && (
+            <label className="check-row" style={{ marginTop: 10 }}>
+              <input
+                type="checkbox"
+                checked={deductFromSalary}
+                onChange={(e) => setDeductFromSalary(e.target.checked)}
+              />
+              <span>
+                Deduct from their salary
+                <span className="hint" style={{ display: 'block' }}>
+                  Personal spending, not a shop cost they incurred for you. It comes off their pay at
+                  the end of the month.
+                </span>
+              </span>
+            </label>
+          )}
           <button type="submit" className="btn" disabled={mutation.isPending} style={{ marginTop: 8 }}>
             {mutation.isPending ? 'Saving…' : 'Record expense'}
           </button>
@@ -137,6 +200,7 @@ export function ExpensesPage() {
                 <th>Date</th>
                 <th>Category</th>
                 <th>Account</th>
+                <th>Spent on</th>
                 <th className="text-right">Amount</th>
                 <th>Description</th>
                 <th />
@@ -148,6 +212,14 @@ export function ExpensesPage() {
                   <td>{formatDate(e.expenseDate)}</td>
                   <td>{e.category?.name}</td>
                   <td>{e.account?.name}</td>
+                  <td>
+                    {e.forUser ? e.forUser.name : 'The shop'}
+                    {e.deductFromSalary && (
+                      <div className="cell-muted" style={{ fontSize: 11.5 }}>
+                        {e.settledBySalaryPaymentId ? 'recovered from salary' : 'deducts from salary'}
+                      </div>
+                    )}
+                  </td>
                   <td className="text-right">{formatMoney(e.amount)}</td>
                   <td>{e.description ?? '-'}</td>
                   <td>
@@ -173,6 +245,24 @@ export function ExpensesPage() {
                           hint: 'Changing this moves the money between accounts.',
                         },
                         { key: 'description', label: 'Note' },
+                        {
+                          key: 'forUserId',
+                          label: 'Spent on',
+                          type: 'select',
+                          options: [
+                            { value: '', label: 'The shop' },
+                            ...(users ?? []).map((u) => ({ value: u.id, label: u.name })),
+                          ],
+                        },
+                        {
+                          key: 'deductFromSalary',
+                          label: 'Deduct from salary',
+                          type: 'select',
+                          options: [
+                            { value: 'no', label: 'No - a shop cost' },
+                            { value: 'yes', label: 'Yes - their own spending' },
+                          ],
+                        },
                       ]}
                       initial={{
                         expenseDate: String(e.expenseDate).slice(0, 10),
@@ -180,6 +270,8 @@ export function ExpensesPage() {
                         categoryId: String(e.categoryId),
                         accountId: String(e.accountId),
                         description: e.description ?? '',
+                        forUserId: e.forUserId ? String(e.forUserId) : '',
+                        deductFromSalary: e.deductFromSalary ? 'yes' : 'no',
                       }}
                       onSave={(v) =>
                         api.adminUpdateExpense(e.id, {
@@ -188,16 +280,18 @@ export function ExpensesPage() {
                           categoryId: Number(v.categoryId),
                           accountId: Number(v.accountId),
                           description: v.description,
+                          forUserId: v.forUserId ? Number(v.forUserId) : undefined,
+                          deductFromSalary: v.deductFromSalary === 'yes',
                         })
                       }
-                      invalidate={['expenses', 'accounts']}
+                      invalidate={['expenses', 'accounts', 'payroll']}
                     />
                     <DeleteButton
                       resource="expenses"
                       id={e.id}
                       label={`${e.category?.name ?? 'Expense'} - ${formatMoney(e.amount)}`}
                       description="The money is also put back into the account it was paid from."
-                      invalidate={['expenses', 'accounts']}
+                      invalidate={['expenses', 'accounts', 'payroll']}
                     />
                     </div>
                   </td>
