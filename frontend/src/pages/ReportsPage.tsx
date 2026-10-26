@@ -11,8 +11,10 @@ import { getToken } from '../api/client';
 import { LoadingState, ErrorBanner, EmptyState } from '../components/StatusBits';
 import { printReport, type PrintColumn } from '../components/PrintReport';
 import { getBusiness } from '../lib/printBrand';
-import { formatMoney, todayIsoDate } from '../lib/format';
-import { IconFarmers, IconPrint, IconDownload, IconReports } from '../components/icons';
+import { PartyDetail, type PartyRef, type PartyKind } from '../components/PartyDetail';
+import { printInvoiceA4, printInvoiceReceipt } from '../components/PrintInvoice';
+import { formatMoney, todayIsoDate, describeBalance } from '../lib/format';
+import { IconFarmers, IconPrint, IconDownload, IconReports, IconSearch } from '../components/icons';
 
 /* ───────────────────────── period presets ───────────────────────── */
 
@@ -154,7 +156,7 @@ const GROUPS = ['Trade', 'Money', 'Stock'];
 
 /* ───────────────────────── page ───────────────────────── */
 
-type Mode = 'reports' | 'farmer';
+type Mode = 'reports' | 'statement' | 'invoice';
 
 export function ReportsPage() {
   const [mode, setMode] = useState<Mode>('reports');
@@ -170,13 +172,18 @@ export function ReportsPage() {
           <button className={mode === 'reports' ? 'active' : ''} onClick={() => setMode('reports')}>
             <IconReports size={15} /> Shop reports
           </button>
-          <button className={mode === 'farmer' ? 'active' : ''} onClick={() => setMode('farmer')}>
-            <IconFarmers size={15} /> Farmer statement
+          <button className={mode === 'statement' ? 'active' : ''} onClick={() => setMode('statement')}>
+            <IconFarmers size={15} /> Party statement
+          </button>
+          <button className={mode === 'invoice' ? 'active' : ''} onClick={() => setMode('invoice')}>
+            <IconSearch size={15} /> Find invoice
           </button>
         </div>
       </div>
 
-      {mode === 'reports' ? <ShopReports /> : <FarmerStatement />}
+      {mode === 'reports' && <ShopReports />}
+      {mode === 'statement' && <PartyStatementPicker />}
+      {mode === 'invoice' && <InvoiceLookupPanel />}
     </div>
   );
 }
@@ -330,184 +337,169 @@ function ShopReports() {
   );
 }
 
-/* ───────────────────────── farmer statement ───────────────────────── */
+/* ───────────── party statement: farmers AND suppliers ───────────── */
 
-function FarmerStatement() {
-  const [farmerId, setFarmerId] = useState<number | null>(null);
-  const { from, to, control, label: periodLabel } = usePeriod();
+/**
+ * Supplier Payables used to be a list of balances with no way through to the
+ * detail, and the only statement in the app was the farmer one. Both sides now
+ * open the same full statement - invoices, line items, payments, running
+ * balance - via the shared PartyDetail view.
+ */
+function PartyStatementPicker() {
+  const [kind, setKind] = useState<PartyKind>('FARMER');
+  const [open, setOpen] = useState<PartyRef | null>(null);
 
-  const [loadingAll, setLoadingAll] = useState(false);
   const { data: farmers } = useQuery({ queryKey: ['farmers'], queryFn: () => api.listFarmers() });
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['farmer-statement', farmerId, from, to],
-    queryFn: () => api.getFarmerStatement(farmerId!, { from, to }),
-    enabled: farmerId !== null,
-  });
+  const { data: suppliers } = useQuery({ queryKey: ['suppliers'], queryFn: () => api.listSuppliers() });
 
-  /**
-   * The whole account, ignoring whatever period is selected. This is the one
-   * an owner actually hands a farmer when they come to settle up - "everything
-   * you have ever owed me" - so it must not quietly depend on the date pills.
-   */
-  async function printEverything() {
-    if (!farmerId) return;
-    setLoadingAll(true);
-    try {
-      const all = await api.getFarmerStatement(farmerId, { from: '2000-01-01', to: '2099-12-31' });
-      renderStatement(all, 'Complete history', 'All time');
-    } catch {
-      alert('Could not load the full history.');
-    } finally {
-      setLoadingAll(false);
-    }
-  }
-
-  function handlePrint() {
-    if (!data) return;
-    renderStatement(data, periodLabel, `${from} to ${to}`);
-  }
-
-  function renderStatement(data: api.FarmerStatement, subtitle: string, rangeLabel: string) {
-    const f = data.farmer;
-    printReport({
-      title: 'Account Statement',
-      subtitle,
-      dateRange: rangeLabel,
-      business: getBusiness(),
-      party: {
-        label: 'Statement for',
-        name: f.name,
-        phone: f.phone ?? undefined,
-        village: f.village ?? undefined,
-      },
-      summary: [
-        { label: 'Opening balance', value: `Rs ${data.summary.openingBalance}` },
-        { label: 'Charged', value: `Rs ${data.summary.charged}` },
-        { label: 'Paid', value: `Rs ${data.summary.paid}` },
-        { label: 'Closing balance', value: `Rs ${data.summary.closingBalance}`, highlight: true },
-      ],
-      sections: [
-        {
-          heading: 'Running account',
-          columns: [
-            { key: 'date', label: 'Date' },
-            { key: 'description', label: 'Details' },
-            { key: 'debit', label: 'Charged', money: true },
-            { key: 'credit', label: 'Paid', money: true },
-            { key: 'balance', label: 'Balance', money: true },
-          ],
-          rows: data.entries.map((e) => ({ ...e, date: e.date.slice(0, 10) })),
-          emptyLabel: 'No account movement in this period.',
-        },
-        {
-          heading: 'Invoices',
-          columns: [
-            { key: 'date', label: 'Date' },
-            { key: 'invoiceNumber', label: 'Ref', muted: true },
-            { key: 'items', label: 'Items', align: 'center' },
-            { key: 'total', label: 'Total', money: true },
-            { key: 'amountPaid', label: 'Paid', money: true },
-            { key: 'balance', label: 'Balance', money: true },
-            { key: 'status', label: 'Status', align: 'center' },
-          ],
-          rows: data.sales,
-          emptyLabel: 'No invoices in this period.',
-        },
-        {
-          heading: 'Payments received',
-          columns: [
-            { key: 'date', label: 'Date' },
-            { key: 'amount', label: 'Amount', money: true },
-            { key: 'method', label: 'Method' },
-            { key: 'account', label: 'Into' },
-            { key: 'notes', label: 'Note' },
-          ],
-          rows: data.payments,
-          emptyLabel: 'No payments in this period.',
-        },
-      ],
-      note: `Closing balance of Rs ${data.summary.closingBalance} is payable to ${
-        getBusiness().name || 'the shop'
-      }. Please contact us if anything on this statement looks wrong.`,
-      signatures: true,
-    });
-  }
+  const list = (kind === 'FARMER' ? farmers : suppliers) ?? [];
 
   return (
     <div>
-      <div className="card statement-bar">
-        <div className="field">
-          <label htmlFor="stmt-farmer">Farmer</label>
-          <select
-            id="stmt-farmer"
-            value={farmerId ?? ''}
-            onChange={(e) => setFarmerId(e.target.value ? Number(e.target.value) : null)}
-          >
-            <option value="">Choose a farmer…</option>
-            {farmers?.map((f) => (
-              <option key={f.id} value={f.id}>
-                {f.name}
-                {f.village ? ` - ${f.village}` : ''}
-              </option>
-            ))}
-          </select>
+      <div className="report-toolbar">
+        <div className="segmented small">
+          <button className={kind === 'FARMER' ? 'active' : ''} onClick={() => setKind('FARMER')}>Farmers</button>
+          <button className={kind === 'SUPPLIER' ? 'active' : ''} onClick={() => setKind('SUPPLIER')}>Suppliers</button>
         </div>
-
-        <div className="field">
-          <label>Period</label>
-          {control}
-        </div>
-
-        <div className="statement-actions">
-          <button className="btn secondary" onClick={handlePrint} disabled={!data}>
-            <IconPrint size={15} /> Print this period
-          </button>
-          <button className="btn" onClick={printEverything} disabled={!farmerId || loadingAll}>
-            <IconPrint size={15} />
-            {loadingAll ? 'Preparing…' : 'Print full history'}
-          </button>
-        </div>
+        <span className="muted-3">Click a name for the full statement, then print it.</span>
       </div>
 
-      {!farmerId && <EmptyState label="Choose a farmer to see their full account - invoices, payments and running balance." />}
-      {farmerId && isLoading && <LoadingState />}
-      {farmerId && error && <ErrorBanner message="Could not load this statement." />}
+      {list.length === 0 ? (
+        <EmptyState label={`No ${kind === 'FARMER' ? 'farmers' : 'suppliers'} yet.`} />
+      ) : (
+        <div className="card" style={{ padding: 0, overflowX: 'auto' }}>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>{kind === 'FARMER' ? 'Farmer' : 'Supplier'}</th>
+                <th>Phone</th>
+                <th className="text-right">{kind === 'FARMER' ? 'Owes you' : 'You owe'}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {list.map((x: any) => (
+                <tr key={x.id}>
+                  <td>
+                    <button className="link-cell" onClick={() => setOpen({ id: x.id, kind, name: x.name })}>
+                      {x.name}
+                    </button>
+                  </td>
+                  <td>{x.phone ?? '-'}</td>
+                  <td className="text-right">
+                    {describeBalance(x.outstandingBalance, kind === 'FARMER' ? 'receivable' : 'payable').text}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {open && <PartyDetail party={open} onClose={() => setOpen(null)} />}
+    </div>
+  );
+}
+
+/* ───────────────────────── invoice lookup ───────────────────────── */
+
+/** Search any invoice number - sale or purchase - and see everything on it. */
+function InvoiceLookupPanel() {
+  const [term, setTerm] = useState('');
+  const [query, setQuery] = useState('');
+
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['invoice-lookup', query],
+    queryFn: () => api.lookupInvoice(query),
+    enabled: query.length > 0,
+    retry: false,
+  });
+
+  return (
+    <div>
+      <form
+        className="report-toolbar"
+        onSubmit={(e) => {
+          e.preventDefault();
+          setQuery(term.trim());
+        }}
+      >
+        <div className="field" style={{ minWidth: 260 }}>
+          <label htmlFor="inv-search">Invoice number</label>
+          <input
+            id="inv-search"
+            value={term}
+            onChange={(e) => setTerm(e.target.value)}
+            placeholder="e.g. S-00003 or P-00001"
+            autoFocus
+          />
+        </div>
+        <button className="btn" type="submit" style={{ alignSelf: 'flex-end' }}>
+          <IconSearch size={15} /> Find
+        </button>
+      </form>
+
+      {!query && <EmptyState label="Enter a sale or purchase invoice number." />}
+      {query && isLoading && <LoadingState />}
+      {query && error && <ErrorBanner message={`No invoice found with number "${query}".`} />}
 
       {data && (
         <>
           <div className="stat-grid">
             <div className="stat-card">
-              <div className="label">Opening balance</div>
-              <div className="value">{formatMoney(data.summary.openingBalance)}</div>
+              <div className="label">{data.kind === 'SALE' ? 'Customer' : 'Supplier'}</div>
+              <div className="value" style={{ fontSize: 16 }}>{data.party.name}</div>
+              <div className="hint">{data.date}</div>
             </div>
             <div className="stat-card">
-              <div className="label">Charged</div>
-              <div className="value">{formatMoney(data.summary.charged)}</div>
-              <div className="hint">{data.summary.invoiceCount} invoice(s)</div>
+              <div className="label">Total</div>
+              <div className="value">{formatMoney(data.total)}</div>
             </div>
             <div className="stat-card">
               <div className="label">Paid</div>
-              <div className="value">{formatMoney(data.summary.paid)}</div>
-              <div className="hint">{data.summary.paymentCount} payment(s)</div>
+              <div className="value">{formatMoney(data.amountPaid)}</div>
             </div>
-            <div className="stat-card accent">
-              <div className="label">Closing balance</div>
-              <div className="value">{formatMoney(data.summary.closingBalance)}</div>
-              <div className="hint">Owed to you</div>
+            <div className={`stat-card${Number(data.balance) > 0 ? ' danger' : ' accent'}`}>
+              <div className="label">Balance</div>
+              <div className="value">{formatMoney(data.balance)}</div>
+              <div className="hint">{data.status}</div>
             </div>
           </div>
 
+          <div className="report-toolbar">
+            <div className="spacer" />
+            <button className="btn secondary small" onClick={() => printInvoiceReceipt(data)}>
+              <IconPrint size={14} /> Receipt
+            </button>
+            <button className="btn small" onClick={() => printInvoiceA4(data)}>
+              <IconPrint size={14} /> Invoice (A4)
+            </button>
+          </div>
+
           <ReportTable
-            heading="Running account"
+            heading="Items"
             columns={[
-              { key: 'date', label: 'Date' },
-              { key: 'description', label: 'Details' },
-              { key: 'debit', label: 'Charged', money: true },
-              { key: 'credit', label: 'Paid', money: true },
-              { key: 'balance', label: 'Balance', money: true },
+              { key: 'product', label: 'Product' },
+              { key: 'sku', label: 'Code', muted: true },
+              { key: 'quantity', label: 'Qty', align: 'right' },
+              { key: 'unitPrice', label: data.kind === 'SALE' ? 'Price' : 'Cost', money: true },
+              { key: 'discount', label: 'Discount', money: true },
+              { key: 'lineTotal', label: 'Amount', money: true },
             ]}
-            rows={data.entries.map((e) => ({ ...e, date: e.date.slice(0, 10) }))}
+            rows={data.lines}
           />
+
+          {data.payments.length > 0 && (
+            <ReportTable
+              heading="Payments against this invoice"
+              columns={[
+                { key: 'date', label: 'Date' },
+                { key: 'amount', label: 'Amount', money: true },
+                { key: 'method', label: 'Method' },
+                { key: 'account', label: 'Account' },
+              ]}
+              rows={data.payments}
+            />
+          )}
         </>
       )}
     </div>
