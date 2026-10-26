@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { requireAuth } from '../../middleware/auth';
+import { requireAuth, requireRole } from '../../middleware/auth';
 import * as productsService from './products.service';
 
 export const productRouter = Router();
@@ -86,7 +86,10 @@ const updateSchema = z.object({
   imageData: imageDataSchema,
 });
 
-productRouter.patch('/:id', async (req, res, next) => {
+// Owner-only: correcting an existing record changes history (a price, an
+// opening balance, a name on an invoice already printed). Employees create
+// records and take payments; only the owner rewrites them.
+productRouter.patch('/:id', requireRole('OWNER'), async (req, res, next) => {
   try {
     const data = updateSchema.parse(req.body);
     const product = await productsService.updateProduct(
