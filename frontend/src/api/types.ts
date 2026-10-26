@@ -2,6 +2,7 @@ export interface User {
   id: number;
   name: string;
   username: string;
+  monthlySalary?: string | null;
   email?: string | null;
   role: 'OWNER' | 'EMPLOYEE';
   isActive?: boolean;
@@ -65,6 +66,7 @@ export interface Product {
   isActive: boolean;
   notes?: string | null;
   imageData?: string | null;
+  createdByUser?: { name: string } | null;
   currentStock?: string;
   isLowStock?: boolean;
   isOutOfStock?: boolean;
@@ -85,6 +87,9 @@ export interface ProductBatch {
 
 export type DocumentStatus = 'UNPAID' | 'PARTIALLY_PAID' | 'PAID' | 'VOID';
 
+/** Where an order is between being placed and standing on the shelf. */
+export type ArrivalStatus = 'PENDING' | 'PARTIAL' | 'RECEIVED';
+
 export interface Purchase {
   id: number;
   supplierId: number;
@@ -99,6 +104,9 @@ export interface Purchase {
   amountPaid: string;
   balance: string;
   status: DocumentStatus;
+  /** Payment status and arrival status are independent: money and goods move on different days. */
+  arrivalStatus: ArrivalStatus;
+  expectedArrivalDate?: string | null;
   notes?: string | null;
   items?: PurchaseItem[];
 }
@@ -112,12 +120,20 @@ export interface PurchaseItem {
   unitCost: string;
   discount: string;
   lineTotal: string;
+  /** Arrived and accepted onto the shelf. */
+  quantityReceived: string;
+  /** Arrived damaged or short; credited back, never stocked. */
+  quantityRejected: string;
+  /** Written off when the order was closed. */
+  quantityCancelled: string;
 }
 
 export interface Sale {
   id: number;
-  farmerId: number;
-  farmer?: Farmer;
+  /** Null for a walk-in counter sale - no credit account is involved. */
+  farmerId: number | null;
+  farmer?: Farmer | null;
+  customerName?: string | null;
   invoiceNumber: string;
   invoiceDate: string;
   dueDate?: string | null;
@@ -168,6 +184,12 @@ export interface Expense {
   amount: string;
   expenseDate: string;
   description?: string | null;
+  /** Who the money was spent on - the owner, or a particular employee. */
+  forUserId?: number | null;
+  forUser?: { id: number; name: string; role: 'OWNER' | 'EMPLOYEE' } | null;
+  /** Employee personal spending, recovered from their next salary. */
+  deductFromSalary?: boolean;
+  settledBySalaryPaymentId?: number | null;
 }
 
 export type TaskStatus = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
@@ -202,4 +224,47 @@ export interface DashboardSnapshot {
   pendingTasks: Task[];
   salesTrend: Array<{ date: string; sales: string; expenses: string }>;
   topProducts: Array<{ name: string; quantity: string; value: string }>;
+  finance: FinanceSummary;
+  pendingArrivals: PendingArrival[];
+  pendingArrivalCount: number;
+}
+
+export interface PendingArrival {
+  id: number;
+  invoiceNumber: string;
+  supplier: string;
+  total: string;
+  balance: string;
+  status: DocumentStatus;
+  arrivalStatus: ArrivalStatus;
+  invoiceDate: string;
+  expectedArrivalDate: string | null;
+}
+
+export interface PartyBalanceRow {
+  id: number;
+  name: string;
+  amount: string;
+}
+
+/**
+ * Two different senses of debit and credit, kept apart on purpose:
+ * `ledger` is the bookkeeping sense on the farmer/supplier accounts, `money`
+ * is cash and bank movement. `receivables`/`payables` are the plain-language
+ * answers derived from the first.
+ */
+export interface FinanceSummary {
+  receivables: { total: string; count: number; parties: PartyBalanceRow[]; advances: string };
+  payables: { total: string; count: number; parties: PartyBalanceRow[]; advances: string };
+  ledger: {
+    farmerDebit: string;
+    farmerCredit: string;
+    supplierDebit: string;
+    supplierCredit: string;
+    totalDebit: string;
+    totalCredit: string;
+  };
+  accounts: Array<{ id: number; name: string; type: 'CASH' | 'BANK'; moneyIn: string; moneyOut: string; balance: string }>;
+  money: { in: string; out: string; net: string };
+  netPosition: string;
 }
