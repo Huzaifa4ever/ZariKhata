@@ -306,8 +306,16 @@ function NewPurchaseModal({ onClose, onCreated }: { onClose: () => void; onCreat
               <ProductPicker
                 products={products ?? []}
                 value={item.productId}
-                onChange={(p) => updateItem(i, { productId: p?.id ?? '' })}
+                onChange={(p) =>
+                  updateItem(i, {
+                    productId: p?.id ?? '',
+                    // A supplier's own price is the best first guess at cost.
+                    unitCost:
+                      p && Number(p.lastPurchaseCost) > 0 ? String(p.lastPurchaseCost) : item.unitCost,
+                  })
+                }
                 required
+                allowCreate
               />
             </div>
             <div className="field">
