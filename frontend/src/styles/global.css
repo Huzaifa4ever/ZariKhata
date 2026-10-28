@@ -3681,3 +3681,144 @@ select option {
   box-shadow: none;
   padding: 0;
 }
+
+/* ===================== PARTY: LIFETIME + INVOICES ====================== */
+/* "What is my credit position from the start?" is a different question from
+   "what happened this month", and a farmer standing at the counter is asking
+   the first one. It gets the top of the screen and the ink block treatment;
+   the date-ranged figures stay below it, clearly labelled as a period. */
+
+.lifetime {
+  background: linear-gradient(145deg, #00451c 0%, #005b27 100%);
+  border-radius: var(--r-lg);
+  padding: var(--s-4) var(--s-5) var(--s-5);
+  color: #ffffff;
+  margin-bottom: var(--s-4);
+}
+
+.lifetime-head {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s-4);
+  flex-wrap: wrap;
+  font-size: var(--t-micro);
+  font-weight: var(--w-semi);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.lifetime-figures {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--s-4);
+  margin-top: var(--s-4);
+}
+
+.lifetime-figures .label {
+  display: block;
+  font-size: var(--t-micro);
+  font-weight: var(--w-semi);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.lifetime-figures .value {
+  display: block;
+  margin-top: var(--s-1);
+  font-family: var(--font-display);
+  font-size: var(--t-sub);
+  font-weight: var(--w-semi);
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: #ffffff;
+}
+
+.lifetime-figures .owing .value {
+  font-size: var(--t-figure);
+}
+
+/* ------------------------- invoice blocks ------------------------- */
+
+.invoice-lines {
+  border-top: 1px solid var(--rule-hair);
+}
+
+.invoice-block {
+  border-bottom: 1px solid var(--rule-hair);
+}
+
+.invoice-summary {
+  display: grid;
+  grid-template-columns: auto minmax(70px, auto) 1fr auto auto;
+  align-items: center;
+  gap: var(--s-3);
+  width: 100%;
+  padding: var(--s-3) var(--s-2);
+  background: none;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+  font-size: var(--t-cell);
+  color: var(--text-2);
+  border-radius: var(--r-sm);
+}
+
+.invoice-summary:hover {
+  background: var(--surface-2);
+}
+
+.invoice-block.open .invoice-summary {
+  background: var(--surface-2);
+}
+
+.inv-ref {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.inv-count {
+  color: var(--text-3);
+}
+
+.inv-total {
+  font-family: var(--font-display);
+  font-weight: var(--w-semi);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.invoice-detail {
+  padding: 0 var(--s-2) var(--s-4);
+}
+
+.invoice-detail .data-table {
+  margin-bottom: var(--s-3);
+}
+
+.invoice-foot {
+  max-width: 340px;
+  margin-left: auto;
+  padding-top: var(--s-3);
+  border-top: 1px solid var(--rule);
+  font-size: var(--t-cell);
+}
+
+@media (max-width: 680px) {
+  .lifetime-figures {
+    grid-template-columns: 1fr;
+    gap: var(--s-3);
+  }
+  .invoice-summary {
+    grid-template-columns: 1fr auto;
+    gap: var(--s-1) var(--s-3);
+  }
+  .inv-count {
+    display: none;
+  }
+  .invoice-foot {
+    max-width: none;
+  }
+}
