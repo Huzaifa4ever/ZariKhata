@@ -12,6 +12,7 @@ import { LoadingState, ErrorBanner, EmptyState } from '../components/StatusBits'
 import { printReport, type PrintColumn } from '../components/PrintReport';
 import { getBusiness } from '../lib/printBrand';
 import { PartyDetail, type PartyRef, type PartyKind } from '../components/PartyDetail';
+import { InvoiceDetailModal } from '../components/InvoiceDetailModal';
 import { printInvoiceA4, printInvoiceReceipt } from '../components/PrintInvoice';
 import { formatMoney, todayIsoDate, describeBalance } from '../lib/format';
 import { IconFarmers, IconPrint, IconDownload, IconReports, IconSearch } from '../components/icons';
@@ -53,12 +54,22 @@ const PERIODS = [
  * cells are names you can click through to the underlying record.
  */
 type ReportColumn = PrintColumn & {
+  /** This cell is an invoice number: clicking it opens the invoice. */
+  invoice?: boolean;
   /**
    * Marks this cell as a party name. `idKey` is the field on the row holding
    * that party's id - a row whose id is missing or null stays plain text,
    * which is what keeps walk-in customers unclickable.
    */
-  party?: { kind: PartyKind; idKey: string };
+  party?: {
+    kind: PartyKind;
+    idKey: string;
+    /**
+     * A walk-in has no account to open, but it does have an invoice. Without
+     * this the name is simply dead on the page, which is what it looked like.
+     */
+    fallbackInvoiceKey?: string;
+  };
 };
 
 interface ReportDef {
@@ -79,9 +90,9 @@ const REPORTS: ReportDef[] = [
   {
     key: 'sales', label: 'Sales', blurb: 'Every invoice raised in the period.', group: 'Trade', csv: true,
     columns: [
-      { key: 'farmer', label: 'Farmer', party: { kind: 'FARMER', idKey: 'farmerId' } },
+      { key: 'farmer', label: 'Farmer', party: { kind: 'FARMER', idKey: 'farmerId', fallbackInvoiceKey: 'invoiceNumber' } },
       { key: 'date', label: 'Date' },
-      { key: 'invoiceNumber', label: 'Ref', muted: true }, MONEY('total', 'Total'),
+      { key: 'invoiceNumber', label: 'Ref', muted: true, invoice: true }, MONEY('total', 'Total'),
       MONEY('amountPaid', 'Paid'), MONEY('balance', 'Balance'),
       { key: 'status', label: 'Status', align: 'center' },
     ],
@@ -92,7 +103,7 @@ const REPORTS: ReportDef[] = [
     columns: [
       { key: 'supplier', label: 'Supplier', party: { kind: 'SUPPLIER', idKey: 'supplierId' } },
       { key: 'date', label: 'Date' },
-      { key: 'invoiceNumber', label: 'Ref', muted: true }, MONEY('total', 'Total'),
+      { key: 'invoiceNumber', label: 'Ref', muted: true, invoice: true }, MONEY('total', 'Total'),
       MONEY('amountPaid', 'Paid'), MONEY('balance', 'Balance'),
       { key: 'status', label: 'Status', align: 'center' },
     ],
@@ -249,6 +260,7 @@ function usePeriod() {
 function ShopReports() {
   const [selected, setSelected] = useState<string>('sales');
   const [party, setParty] = useState<PartyRef | null>(null);
+  const [invoice, setInvoice] = useState<string | null>(null);
   const def = REPORTS.find((r) => r.key === selected)!;
   const { from, to, control, label: periodLabel } = usePeriod();
   const [exporting, setExporting] = useState(false);
@@ -352,13 +364,14 @@ function ShopReports() {
               (rows.length === 0 ? (
                 <EmptyState label="Nothing recorded for this period." />
               ) : (
-                <ReportTable columns={def.columns} rows={rows} onOpenParty={setParty} />
+                <ReportTable columns={def.columns} rows={rows} onOpenParty={setParty} onOpenInvoice={setInvoice} />
               ))}
           </>
         )}
       </section>
 
       {party && <PartyDetail party={party} onClose={() => setParty(null)} />}
+      {invoice && <InvoiceDetailModal invoiceNumber={invoice} onClose={() => setInvoice(null)} />}
     </div>
   );
 }
@@ -539,12 +552,14 @@ function ReportTable({
   rows,
   heading,
   onOpenParty,
+  onOpenInvoice,
 }: {
   columns: ReportColumn[];
   rows: Array<Record<string, unknown>>;
   heading?: string;
   /** Omitted by callers that have nowhere to navigate to, e.g. the statement. */
   onOpenParty?: (party: PartyRef) => void;
+  onOpenInvoice?: (invoiceNumber: string) => void;
 }) {
   if (rows.length === 0) return <EmptyState label="Nothing to show." />;
   return (
@@ -571,7 +586,33 @@ function ReportTable({
                     c.money || c.align === 'right' ? 'text-right' : '',
                     c.muted ? 'cell-muted' : '',
                   ].filter(Boolean).join(' ');
+                  // An invoice number is always a doorway.
+                  if (c.invoice && onOpenInvoice && raw) {
+                    return (
+                      <td key={c.key} className={cls}>
+                        <button className="link-cell" onClick={() => onOpenInvoice(String(raw))}>
+                          {String(raw)}
+                        </button>
+                      </td>
+                    );
+                  }
                   const partyId = c.party ? row[c.party.idKey] : null;
+                  // No account behind the name (a walk-in): open its invoice.
+                  if (
+                    c.party?.fallbackInvoiceKey &&
+                    onOpenInvoice &&
+                    !(typeof partyId === 'number' && partyId > 0) &&
+                    row[c.party.fallbackInvoiceKey]
+                  ) {
+                    const ref = String(row[c.party.fallbackInvoiceKey]);
+                    return (
+                      <td key={c.key} className={cls}>
+                        <button className="link-cell" onClick={() => onOpenInvoice(ref)} title={`Open ${ref}`}>
+                          {String(raw)}
+                        </button>
+                      </td>
+                    );
+                  }
                   if (c.party && onOpenParty && typeof partyId === 'number' && partyId > 0) {
                     return (
                       <td key={c.key} className={cls}>
