@@ -21,11 +21,11 @@ import { writeAuditLog } from '../../lib/audit';
 import { AppError } from '../../lib/errors';
 import { parseBusinessDate } from '../../lib/dates';
 import { recordAccountTransaction } from '../../lib/accountLedger';
-import { recordStockMovement, reverseStockMovements, lockProductRow } from '../../lib/stock';
+import { recordStockMovement, reverseStockMovements, lockProductRow, getProductStock } from '../../lib/stock';
 import { consumeBatchesFifo } from '../../lib/fifoBatches';
 import { recordLedgerEntry } from '../../lib/ledger';
 import { allocateOldestFirst } from '../../lib/paymentAllocation';
-import { deriveStatus } from '../../lib/invoiceStatus';
+import { deriveStatus, deriveStatusFromBalance } from '../../lib/invoiceStatus';
 import { Prisma, StockMovementReason, PartyType, LedgerDirection, PaymentMethod } from '@prisma/client';
 import type { Tx } from '../../db/prisma';
 
@@ -869,6 +869,68 @@ adminRouter.patch('/supplier-payments/:id', async (req, res, next) => {
     });
 
     res.json(updated);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/* ───────────────────── sale returns ───────────────────── */
+
+/**
+ * Undo a return that was recorded by mistake.
+ *
+ * Without this the app had a dead end: deleting a sale refuses while it has
+ * returns against it ("delete this sale's returns first"), but there was no
+ * route that could delete one. A mis-keyed return was permanent, and it took
+ * the sale down with it.
+ *
+ * Reversing takes back off the shelf whatever the return had restocked, drops
+ * the credit it posted to the farmer and any cash refund, and puts the
+ * invoice's balance and status back where they were.
+ */
+adminRouter.delete('/sale-returns/:id', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const businessId = req.businessId!;
+
+    await runInTransaction(async (tx) => {
+      const saleReturn = await tx.saleReturn.findFirst({
+        where: { id, businessId },
+        include: { items: true, sale: true },
+      });
+      if (!saleReturn) throw AppError.notFound('Return not found');
+
+      // Restocked goods may already have been sold on again; taking them back
+      // out would drive that product negative.
+      for (const item of saleReturn.items) {
+        if (!item.restocked) continue;
+        const stock = await getProductStock(tx, item.productId);
+        if (stock.lt(item.quantity.toString())) {
+          throw AppError.badRequest(
+            'Some of the returned stock has already been sold again, so this return cannot be undone.',
+          );
+        }
+      }
+
+      await audit(tx, req, 'SaleReturn', id, saleReturn);
+      // Ledger credit, cash refund and the restocking movements all hang off
+      // the same relatedType/relatedId pair.
+      await clearArtifacts(tx, businessId, 'SaleReturn', id);
+      await tx.saleReturnItem.deleteMany({ where: { saleReturnId: id } });
+      await tx.saleReturn.delete({ where: { id } });
+
+      const sale = saleReturn.sale;
+      const restored = new Decimal(sale.balance.toString()).plus(saleReturn.totalAmount.toString());
+      await tx.sale.update({
+        where: { id: sale.id },
+        data: {
+          balance: restored.toString(),
+          status: deriveStatusFromBalance(restored, sale.amountPaid.toString()),
+        },
+      });
+    });
+
+    res.json({ deleted: true });
   } catch (err) {
     next(err);
   }
