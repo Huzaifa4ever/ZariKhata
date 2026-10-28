@@ -8,6 +8,7 @@ import { fileToResizedDataUrl } from '../lib/image';
 import { IconPlus } from '../components/icons';
 import { todayIsoDate } from '../lib/format';
 import { DeleteButton } from '../components/DeleteButton';
+import { StockBatchesModal } from '../components/StockBatchesModal';
 import { EditButton } from '../components/EditButton';
 
 type Filter = 'all' | 'lowStock' | 'outOfStock' | 'expiringSoon' | 'expired';
@@ -17,6 +18,7 @@ export function ProductsPage() {
   const [q, setQ] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const [adjustProductId, setAdjustProductId] = useState<number | null>(null);
+  const [batchesFor, setBatchesFor] = useState<{ id: number; name: string } | null>(null);
   const qc = useQueryClient();
 
   const filters = {
@@ -92,7 +94,19 @@ export function ProductsPage() {
                   <td>{p.name}</td>
                   <td className="cell-muted">{p.sku}</td>
                   <td>{p.unit}</td>
-                  <td>{formatQty(p.currentStock)}</td>
+                  <td>
+                    {Number(p.currentStock ?? 0) > 0 ? (
+                      <button
+                        className="link-cell"
+                        onClick={() => setBatchesFor({ id: p.id, name: p.name })}
+                        title="See the expiry dates behind this figure"
+                      >
+                        {formatQty(p.currentStock)}
+                      </button>
+                    ) : (
+                      formatQty(p.currentStock)
+                    )}
+                  </td>
                   <td>{formatMoney(p.sellingPrice)}</td>
                   <td className="cell-muted">{p.createdByUser?.name ?? '-'}</td>
                   <td>
@@ -153,6 +167,13 @@ export function ProductsPage() {
             setShowCreate(false);
             qc.invalidateQueries({ queryKey: ['products'] });
           }}
+        />
+      )}
+      {batchesFor && (
+        <StockBatchesModal
+          productId={batchesFor.id}
+          productName={batchesFor.name}
+          onClose={() => setBatchesFor(null)}
         />
       )}
       {adjustProductId && (
