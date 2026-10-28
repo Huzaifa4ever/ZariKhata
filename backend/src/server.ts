@@ -21,3 +21,5 @@ async function shutdown(signal: string) {
 
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
+
+// Deployed from GitHub automatically; see /opt/zarikhata/deploy.sh on the server.
