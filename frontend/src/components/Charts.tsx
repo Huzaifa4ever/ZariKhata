@@ -6,7 +6,7 @@
  * dashboard needs. They read from the same CSS custom properties as the rest
  * of the UI, so they re-theme with light/dark for free.
  */
-import { useId, type ReactNode } from 'react';
+import { type ReactNode } from 'react';
 import { formatMoney } from '../lib/format';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -48,7 +48,6 @@ export function TrendChart({
   subtitle?: string;
   control?: ReactNode;
 }) {
-  const gradId = useId();
   const W = 760;
   const H = 220;
   const PAD = { top: 14, right: 10, bottom: 24, left: 52 };
@@ -78,7 +77,6 @@ export function TrendChart({
   const y = (v: number) => PAD.top + plotH - (v / max) * plotH;
 
   const line = (vals: number[]) => vals.map((v, i) => `${i === 0 ? 'M' : 'L'}${x(i)},${y(v)}`).join(' ');
-  const area = `${line(sales)} L${x(sales.length - 1)},${PAD.top + plotH} L${x(0)},${PAD.top + plotH} Z`;
 
   const ticks = [0, 0.25, 0.5, 0.75, 1].map((t) => max * t);
   const barW = Math.max(3, plotW / data.length - 8);
@@ -101,13 +99,6 @@ export function TrendChart({
 
       <svg viewBox={`0 0 ${W} ${H}`} className="chart-svg" role="img"
            aria-label={`Sales and expenses, ${data.length} ${bucket === "month" ? "months" : "days"}`}>
-        <defs>
-          <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--brand)" stopOpacity="0.26" />
-            <stop offset="100%" stopColor="var(--brand)" stopOpacity="0" />
-          </linearGradient>
-        </defs>
-
         {ticks.map((t) => (
           <g key={t}>
             <line x1={PAD.left} x2={W - PAD.right} y1={y(t)} y2={y(t)} className="grid" />
@@ -133,7 +124,6 @@ export function TrendChart({
           </rect>
         ))}
 
-        <path d={area} fill={`url(#${gradId})`} />
         <path d={line(sales)} className="line-sales" />
         {sales.map((v, i) => (
           <circle key={i} cx={x(i)} cy={y(v)} r={2.6} className="dot-sales">
