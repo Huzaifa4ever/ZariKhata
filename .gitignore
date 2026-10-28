@@ -21,6 +21,13 @@ link-and-pass*
 *credential*
 *secret*
 *password*
+# ...but these patterns are about NOTES, not code. Source files that merely
+# have one of those words in the name are real code and must ship - without
+# this exception backend/src/lib/password.ts was silently left out of the
+# repository and no clean deploy could build.
+!backend/src/**/*.ts
+!frontend/src/**/*.ts
+!frontend/src/**/*.tsx
 
 # ---- local data & backups ----
 backups/
