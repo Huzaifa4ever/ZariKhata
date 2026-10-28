@@ -8,8 +8,11 @@
  * "Demo Super Weedkill 500ml".
  */
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { Product } from '../api/types';
-import { IconClose, IconSearch } from './icons';
+import * as api from '../api/resources';
+import { ApiError } from '../api/client';
+import { IconClose, IconPlus, IconSearch } from './icons';
 
 /** Case, spaces and punctuation all dropped - nobody types a SKU consistently. */
 function normalize(value: string): string {
@@ -39,6 +42,7 @@ export function ProductPicker({
   onChange,
   required = false,
   placeholder = 'Search by name or code...',
+  allowCreate = false,
 }: {
   products: Product[];
   value: number | '';
@@ -46,10 +50,21 @@ export function ProductPicker({
   onChange: (product: Product | null) => void;
   required?: boolean;
   placeholder?: string;
+  /**
+   * Offer "add this as a new product" when the search finds nothing. Set on
+   * the purchase form, where a supplier turning up with something you have
+   * never stocked is routine - without it the only way through is to abandon
+   * the half-typed invoice, go to Products, and start again.
+   *
+   * Left off for sales: a product created there would have no stock, so the
+   * sale would fail on the next line anyway.
+   */
+  allowCreate?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
+  const [creating, setCreating] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -86,7 +101,10 @@ export function ProductPicker({
     onChange(product);
     setQuery('');
     setOpen(false);
+    setCreating(false);
   }
+
+  const canCreate = allowCreate && query.trim().length > 1;
 
   function handleKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
@@ -161,7 +179,15 @@ export function ProductPicker({
         onFocus={() => inputRef.current?.focus()}
       />
 
-      {open && (
+      {open && creating && (
+        <NewProductInline
+          name={query.trim()}
+          onCancel={() => setCreating(false)}
+          onCreated={(p) => choose(p)}
+        />
+      )}
+
+      {open && !creating && (
         <div className="combo-list" id={listId} role="listbox" ref={listRef}>
           {results.length === 0 && (
             <div className="combo-empty">
@@ -190,8 +216,121 @@ export function ProductPicker({
               </button>
             );
           })}
+
+          {canCreate && (
+            <button
+              type="button"
+              className="combo-create"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                setCreating(true);
+              }}
+            >
+              <IconPlus size={14} />
+              Add "{query.trim()}" as a new product
+            </button>
+          )}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * A compact create form shown inside the dropdown rather than as a second
+ * modal - the picker is already inside the New Purchase dialog, and stacking
+ * modals is how people lose what they had typed.
+ */
+function NewProductInline({
+  name,
+  onCancel,
+  onCreated,
+}: {
+  name: string;
+  onCancel: () => void;
+  onCreated: (product: Product) => void;
+}) {
+  const qc = useQueryClient();
+  const [form, setForm] = useState({ name, sku: '', unit: 'bottle', sellingPrice: '' });
+  const [error, setError] = useState<string | null>(null);
+
+  const save = useMutation({
+    mutationFn: () =>
+      api.createProduct({
+        name: form.name.trim(),
+        sku: form.sku.trim(),
+        unit: form.unit.trim() || 'unit',
+        sellingPrice: Number(form.sellingPrice || 0),
+      }),
+    onSuccess: (product) => {
+      qc.invalidateQueries({ queryKey: ['products'] });
+      onCreated(product as Product);
+    },
+    onError: (e) => setError(e instanceof ApiError ? e.message : 'Could not add that product.'),
+  });
+
+  return (
+    <div className="combo-list combo-create-panel">
+      <div className="combo-create-head">New product</div>
+      {error && <div className="combo-create-error">{error}</div>}
+      <div className="combo-create-grid">
+        <label>
+          <span>Name</span>
+          <input
+            autoFocus
+            value={form.name}
+            onChange={(e) => setForm({ ...form, name: e.target.value })}
+            onKeyDown={(e) => e.key === 'Enter' && e.preventDefault()}
+          />
+        </label>
+        <label>
+          <span>Code</span>
+          <input
+            value={form.sku}
+            placeholder="optional"
+            onChange={(e) => setForm({ ...form, sku: e.target.value })}
+            onKeyDown={(e) => e.key === 'Enter' && e.preventDefault()}
+          />
+        </label>
+        <label>
+          <span>Unit</span>
+          <input
+            value={form.unit}
+            onChange={(e) => setForm({ ...form, unit: e.target.value })}
+            onKeyDown={(e) => e.key === 'Enter' && e.preventDefault()}
+          />
+        </label>
+        <label>
+          <span>Selling price</span>
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            value={form.sellingPrice}
+            onChange={(e) => setForm({ ...form, sellingPrice: e.target.value })}
+            onKeyDown={(e) => e.key === 'Enter' && e.preventDefault()}
+          />
+        </label>
+      </div>
+      <p className="combo-create-note">
+        The cost and expiry come from the purchase line you are filling in.
+      </p>
+      <div className="combo-create-actions">
+        <button type="button" className="btn secondary small" onClick={onCancel}>
+          Cancel
+        </button>
+        <button
+          type="button"
+          className="btn small"
+          disabled={save.isPending || !form.name.trim()}
+          onClick={() => {
+            setError(null);
+            save.mutate();
+          }}
+        >
+          {save.isPending ? 'Adding...' : 'Add and use'}
+        </button>
+      </div>
     </div>
   );
 }
