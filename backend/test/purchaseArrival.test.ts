@@ -303,3 +303,69 @@ describe('purchase order arrival', () => {
     expect(dash.body.pendingArrivalCount).toBeGreaterThan(0);
   });
 });
+
+/**
+ * The same product bought twice with different expiry dates is the normal
+ * case in this trade, not an edge case: three bags going off next month sit
+ * on the shelf beside fifty that are good for a year. What matters is which
+ * ones leave first.
+ */
+describe('batches and expiry', () => {
+  let ctx: TestContext;
+  let auth: string;
+
+  beforeAll(async () => {
+    ctx = await getTestContext();
+    auth = `Bearer ${ctx.token}`;
+  });
+
+  it('sells the near-expiry batch first, not the one bought first', async () => {
+    const supplier = await request(app).post('/api/suppliers').set('Authorization', auth).send({ name: `S ${uniqueSuffix()}` });
+    const product = await request(app)
+      .post('/api/products')
+      .set('Authorization', auth)
+      .send({ sku: `SKU-${uniqueSuffix()}`, name: 'Seed', unit: 'bag', sellingPrice: 500 });
+
+    // Bought first, but expires LAST.
+    await request(app)
+      .post('/api/purchases')
+      .set('Authorization', auth)
+      .send({
+        supplierId: supplier.body.id,
+        invoiceDate: new Date().toISOString(),
+        items: [{ productId: product.body.id, quantity: 50, unitCost: 320, expiryDate: '2030-10-31' }],
+      });
+    // Bought second, but expires FIRST.
+    await request(app)
+      .post('/api/purchases')
+      .set('Authorization', auth)
+      .send({
+        supplierId: supplier.body.id,
+        invoiceDate: new Date().toISOString(),
+        items: [{ productId: product.body.id, quantity: 3, unitCost: 300, expiryDate: '2027-01-31' }],
+      });
+
+    const before = await request(app).get(`/api/products/${product.body.id}`).set('Authorization', auth);
+    expect(Number(before.body.currentStock)).toBe(53);
+    expect(before.body.batches).toHaveLength(2);
+
+    const farmer = await request(app).post('/api/farmers').set('Authorization', auth).send({ name: `F ${uniqueSuffix()}` });
+    await request(app)
+      .post('/api/sales')
+      .set('Authorization', auth)
+      .send({
+        farmerId: farmer.body.id,
+        invoiceDate: new Date().toISOString(),
+        items: [{ productId: product.body.id, quantity: 5, unitPrice: 500 }],
+      });
+
+    const after = await request(app).get(`/api/products/${product.body.id}`).set('Authorization', auth);
+    expect(Number(after.body.currentStock)).toBe(48);
+
+    const soon = after.body.batches.find((b: any) => String(b.expiryDate).startsWith('2027'));
+    const later = after.body.batches.find((b: any) => String(b.expiryDate).startsWith('2030'));
+    // All 3 of the near-expiry bags went, then 2 off the long-dated batch.
+    expect(Number(soon.quantityRemaining)).toBe(0);
+    expect(Number(later.quantityRemaining)).toBe(48);
+  });
+});
