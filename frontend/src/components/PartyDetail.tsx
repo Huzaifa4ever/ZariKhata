@@ -64,12 +64,105 @@ export function PartyDetail({ party, onClose }: { party: PartyRef; onClose: () =
   const profile = isFarmer ? stmt?.farmer : stmt?.supplier;
   const owed = Number(summary?.closingBalance ?? 0);
 
+  /**
+   * One statement a farmer can actually read.
+   *
+   * The old one printed the same money three times - a running ledger, then
+   * an invoice table, then a payments table - with no product names anywhere
+   * and columns headed METHOD / INTO carrying words like "CASH" and "Cash in
+   * hand", which are this system's internal account names, not anything the
+   * person holding the paper has ever heard.
+   *
+   * This is a single chronological story instead: each purchase, what was in
+   * it, what it came to, what was paid against it, and what is left - with a
+   * running balance down the right so the last number is the answer.
+   */
   function printStatement() {
     if (!stmt) return;
+
+    const howPaid = (p: any) => {
+      const acct = String(p.account ?? '').toLowerCase();
+      if (/bank|online|transfer|easypaisa|jazz/.test(acct)) return 'by bank transfer';
+      if (/cash/.test(acct)) return 'in cash';
+      return p.account ? `into ${p.account}` : '';
+    };
+
+    type Row = Record<string, unknown>;
+    const rows: Row[] = [];
+    let running = Number(summary.openingBalance ?? 0);
+
+    if (running !== 0) {
+      rows.push({
+        _row: 'open-bal',
+        date: '',
+        details: 'Balance brought forward',
+        qty: '',
+        rate: '',
+        amount: '',
+        paid: '',
+        balance: running.toFixed(2),
+      });
+    }
+
+    // Purchases and payments, merged and read in the order they happened.
+    const events = [
+      ...invoices.map((i: any) => ({ when: String(i.date), kind: 'invoice' as const, data: i })),
+      ...payments.map((p: any) => ({ when: String(p.date), kind: 'payment' as const, data: p })),
+    ].sort((a, b) => (a.when < b.when ? -1 : a.when > b.when ? 1 : a.kind === 'invoice' ? -1 : 1));
+
+    for (const ev of events) {
+      if (ev.kind === 'invoice') {
+        const inv = ev.data;
+        running += Number(inv.total);
+        const lines = inv.lines ?? [];
+        rows.push({
+          _row: lines.length ? 'inv' : 'inv close',
+          date: formatDate(inv.date),
+          details: `${isFarmer ? 'Bought' : 'Billed'} on ${inv.invoiceNumber} - ${inv.settlement ?? inv.status}`,
+          qty: '',
+          rate: '',
+          amount: Number(inv.total).toFixed(2),
+          // Deliberately blank: what has been paid against this invoice shows
+          // up as its own dated payment row further down. Putting it here too
+          // would have the farmer counting the same rupees twice as they read
+          // down the Paid column.
+          paid: '',
+          balance: running.toFixed(2),
+        });
+        lines.forEach((l: any, idx: number) => {
+          rows.push({
+            _row: idx === lines.length - 1 ? 'item close' : 'item',
+            date: '',
+            details: l.product,
+            qty: `${l.quantity} ${l.unit}`.trim(),
+            rate: Number(l.unitPrice).toFixed(2),
+            amount: Number(l.lineTotal).toFixed(2),
+            paid: '',
+            balance: '',
+          });
+        });
+      } else {
+        const pay = ev.data;
+        running -= Number(pay.amount);
+        rows.push({
+          _row: 'pay close',
+          date: formatDate(pay.date),
+          details: `${isFarmer ? 'You paid' : 'We paid'} ${howPaid(pay)}`.trim(),
+          qty: '',
+          rate: '',
+          amount: '',
+          paid: Number(pay.amount).toFixed(2),
+          balance: running.toFixed(2),
+        });
+      }
+    }
+
+    const owing = Number(life?.balance ?? summary.closingBalance ?? 0);
+
     printReport({
       title: 'Account Statement',
-      subtitle: isFarmer ? 'Customer account' : 'Supplier account',
-      dateRange: 'All time',
+      subtitle: isFarmer ? `${profile?.name ?? party.name} - customer account` : `${profile?.name ?? party.name} - supplier account`,
+      dateRange: life?.firstTrade ? `Everything since ${formatDate(life.firstTrade)}` : 'All time',
       business: getBusiness(),
       party: {
         label: isFarmer ? 'Statement for' : 'Supplier',
@@ -78,71 +171,40 @@ export function PartyDetail({ party, onClose }: { party: PartyRef; onClose: () =
         village: isFarmer ? profile?.village ?? undefined : profile?.address ?? undefined,
       },
       summary: [
-        { label: 'Opening balance', value: `Rs ${summary.openingBalance}` },
-        { label: isFarmer ? 'Charged' : 'Billed to us', value: `Rs ${summary.charged ?? summary.billed}` },
-        { label: 'Paid', value: `Rs ${summary.paid}` },
-        { label: 'Closing balance', value: `Rs ${summary.closingBalance}`, highlight: true },
+        { label: isFarmer ? 'Total bought' : 'Total billed', value: formatMoney(life?.totalInvoiced ?? summary.charged) },
+        { label: 'Total paid', value: formatMoney(life?.totalPaid ?? summary.paid) },
+        {
+          label: owing > 0 ? (isFarmer ? 'Still to pay' : 'We still owe') : 'Settled',
+          value: formatMoney(Math.abs(owing)),
+          highlight: true,
+        },
       ],
       sections: [
         {
-          heading: 'Running account',
+          heading: '',
           columns: [
             { key: 'date', label: 'Date' },
-            { key: 'description', label: 'Details' },
-            { key: 'debit', label: isFarmer ? 'Charged' : 'Billed', money: true },
-            { key: 'credit', label: 'Paid', money: true },
-            { key: 'balance', label: 'Balance', money: true },
-          ],
-          rows: entries.map((e) => ({ ...e, date: String(e.date).slice(0, 10) })),
-          emptyLabel: 'No account movement.',
-        },
-        {
-          heading: isFarmer ? 'Invoices' : 'Purchase invoices',
-          columns: [
-            { key: 'date', label: 'Date' },
-            { key: 'invoiceNumber', label: 'Ref', muted: true },
-            { key: 'items', label: 'Items', align: 'center' },
-            { key: 'total', label: 'Total', money: true },
-            { key: 'amountPaid', label: 'Paid', money: true },
-            { key: 'balance', label: 'Balance', money: true },
-            { key: 'status', label: 'Status', align: 'center' },
-          ],
-          rows: invoices,
-          emptyLabel: 'No invoices.',
-        },
-        ...(stmt.lines?.length
-          ? [
-              {
-                heading: 'Items supplied',
-                columns: [
-                  { key: 'date', label: 'Date' },
-                  { key: 'invoiceNumber', label: 'Ref', muted: true },
-                  { key: 'product', label: 'Product' },
-                  { key: 'quantity', label: 'Qty', align: 'right' as const },
-                  { key: 'unitCost', label: 'Rate', money: true },
-                  { key: 'lineTotal', label: 'Amount', money: true },
-                ],
-                rows: stmt.lines,
-                emptyLabel: 'No line items.',
-              },
-            ]
-          : []),
-        {
-          heading: isFarmer ? 'Payments received' : 'Payments made',
-          columns: [
-            { key: 'date', label: 'Date' },
+            { key: 'details', label: 'Details' },
+            { key: 'qty', label: 'Qty', align: 'right' },
+            { key: 'rate', label: 'Rate', money: true },
             { key: 'amount', label: 'Amount', money: true },
-            { key: 'method', label: 'Method' },
-            { key: 'account', label: isFarmer ? 'Into' : 'From' },
-            { key: 'notes', label: 'Note' },
+            { key: 'paid', label: 'Paid', money: true },
+            { key: 'balance', label: 'Balance', money: true },
           ],
-          rows: payments,
-          emptyLabel: 'No payments.',
+          rows,
+          emptyLabel: 'Nothing has been bought or paid yet.',
         },
       ],
-      note: `Closing balance of Rs ${summary.closingBalance} ${
-        isFarmer ? 'is payable to' : 'is owed by'
-      } ${getBusiness().name || 'the shop'}.`,
+      note: (() => {
+        const stop = (t: string) => (t.endsWith('.') ? t : `${t}.`);
+        if (owing > 0) {
+          return isFarmer
+            ? stop(`${formatMoney(owing)} is still to be paid to ${getBusiness().name || 'the shop'}`)
+            : stop(`${formatMoney(owing)} is still owed to ${profile?.name ?? party.name}`);
+        }
+        if (owing < 0) return `${formatMoney(Math.abs(owing))} is in credit.`;
+        return 'This account is fully settled. Nothing is outstanding.';
+      })(),
       signatures: true,
     });
   }
