@@ -197,6 +197,17 @@ reportRouter.get('/farmer-statement/:farmerId', async (req, res, next) => {
     }
     const openingBalance = running;
 
+    // "What is my credit position from the start?" is a different question
+    // from "what happened this month", and a farmer standing at the counter is
+    // asking the first one. These ignore the date window entirely.
+    let lifeCharged = new Decimal(0);
+    let lifePaid = new Decimal(0);
+    for (const e of allEntries) {
+      if (e.direction === 'DEBIT') lifeCharged = lifeCharged.plus(e.amount.toString());
+      else lifePaid = lifePaid.plus(e.amount.toString());
+    }
+    const lifeBalance = new Decimal(farmer.openingBalance.toString()).plus(lifeCharged).minus(lifePaid);
+
     let charged = new Decimal(0);
     let paid = new Decimal(0);
     const entries = allEntries
@@ -211,7 +222,7 @@ reportRouter.get('/farmer-statement/:farmerId', async (req, res, next) => {
         }
         return {
           date: e.entryDate.toISOString(),
-          description: e.description ?? e.relatedType ?? '—',
+          description: e.description ?? e.relatedType ?? '-',
           debit: e.direction === 'DEBIT' ? e.amount.toString() : '',
           credit: e.direction === 'CREDIT' ? e.amount.toString() : '',
           balance: running.toFixed(2),
@@ -230,7 +241,22 @@ reportRouter.get('/farmer-statement/:farmerId', async (req, res, next) => {
         invoiceCount: sales.length,
         paymentCount: payments.length,
       },
+      /**
+       * Everything the farmer's whole trade history adds up to, regardless of
+       * the date range above. This is what gets answered when someone walks in
+       * and asks what they owe.
+       */
+      lifetime: {
+        openingBalance: farmer.openingBalance.toString(),
+        totalInvoiced: lifeCharged.toFixed(2),
+        totalPaid: lifePaid.toFixed(2),
+        balance: lifeBalance.toFixed(2),
+        firstTrade: allEntries.length ? allEntries[0].entryDate.toISOString().slice(0, 10) : null,
+        lastTrade: allEntries.length ? allEntries[allEntries.length - 1].entryDate.toISOString().slice(0, 10) : null,
+        entryCount: allEntries.length,
+      },
       sales: sales.map((s) => ({
+        id: s.id,
         invoiceNumber: s.invoiceNumber,
         date: s.invoiceDate.toISOString().slice(0, 10),
         items: s.items.length,
@@ -238,6 +264,24 @@ reportRouter.get('/farmer-statement/:farmerId', async (req, res, next) => {
         amountPaid: s.amountPaid.toString(),
         balance: s.balance.toString(),
         status: s.status,
+        /** How it was settled, in the words a shopkeeper uses. */
+        settlement:
+          s.status === 'PAID'
+            ? 'Paid in full'
+            : Number(s.amountPaid) > 0
+              ? 'Part paid'
+              : 'On credit',
+        // The lines were already fetched and then thrown away as a count.
+        // What the farmer actually bought is the point of the statement.
+        lines: s.items.map((i) => ({
+          product: i.product?.name ?? 'Product',
+          sku: i.product?.sku ?? '',
+          unit: i.product?.unit ?? '',
+          quantity: i.quantity.toString(),
+          unitPrice: i.unitPrice.toString(),
+          discount: i.discount.toString(),
+          lineTotal: i.lineTotal.toString(),
+        })),
       })),
       payments: payments.map((p) => ({
         // id and accountId travel with the row so the party screen can offer
@@ -295,6 +339,14 @@ reportRouter.get('/supplier-statement/:supplierId', async (req, res, next) => {
     }
     const openingBalance = running;
 
+    let lifeCharged = new Decimal(0);
+    let lifePaid = new Decimal(0);
+    for (const e of allEntries) {
+      if (e.direction === 'DEBIT') lifeCharged = lifeCharged.plus(e.amount.toString());
+      else lifePaid = lifePaid.plus(e.amount.toString());
+    }
+    const lifeBalance = new Decimal(supplier.openingBalance.toString()).plus(lifeCharged).minus(lifePaid);
+
     let billed = new Decimal(0);
     let paid = new Decimal(0);
     const entries = allEntries
@@ -328,7 +380,17 @@ reportRouter.get('/supplier-statement/:supplierId', async (req, res, next) => {
         invoiceCount: purchases.length,
         paymentCount: payments.length,
       },
+      lifetime: {
+        openingBalance: supplier.openingBalance.toString(),
+        totalInvoiced: lifeCharged.toFixed(2),
+        totalPaid: lifePaid.toFixed(2),
+        balance: lifeBalance.toFixed(2),
+        firstTrade: allEntries.length ? allEntries[0].entryDate.toISOString().slice(0, 10) : null,
+        lastTrade: allEntries.length ? allEntries[allEntries.length - 1].entryDate.toISOString().slice(0, 10) : null,
+        entryCount: allEntries.length,
+      },
       purchases: purchases.map((p) => ({
+        id: p.id,
         invoiceNumber: p.invoiceNumber,
         supplierInvoiceNumber: p.supplierInvoiceNumber ?? '',
         date: p.invoiceDate.toISOString().slice(0, 10),
@@ -337,6 +399,21 @@ reportRouter.get('/supplier-statement/:supplierId', async (req, res, next) => {
         amountPaid: p.amountPaid.toString(),
         balance: p.balance.toString(),
         status: p.status,
+        settlement:
+          p.status === 'PAID'
+            ? 'Paid in full'
+            : Number(p.amountPaid) > 0
+              ? 'Part paid'
+              : 'On credit',
+        lines: p.items.map((i) => ({
+          product: i.product?.name ?? 'Product',
+          sku: i.product?.sku ?? '',
+          unit: i.product?.unit ?? '',
+          quantity: i.quantity.toString(),
+          unitPrice: i.unitCost.toString(),
+          discount: i.discount.toString(),
+          lineTotal: i.lineTotal.toString(),
+        })),
       })),
       // Line-level detail: which products, how many, at what price.
       lines: purchases.flatMap((p) =>
