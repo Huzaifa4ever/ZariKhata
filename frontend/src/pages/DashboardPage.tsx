@@ -1,24 +1,24 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import * as api from '../api/resources';
-import { formatMoney, formatDate, todayIsoDate } from '../lib/format';
+import { formatDate, todayIsoDate } from '../lib/format';
 import { LoadingState, ErrorBanner, EmptyState } from '../components/StatusBits';
-import { TrendChart, BalanceDonut, TopProducts } from '../components/Charts';
-import type { FinanceSummary, PendingArrival } from '../api/types';
+import { TrendChart, TopProducts } from '../components/Charts';
+import type { PendingArrival } from '../api/types';
+import { PartyDetail, type PartyRef } from '../components/PartyDetail';
 import {
-  IconAccounts,
-  IconAlert,
-  IconExpenses,
-  IconFarmers,
-  IconProducts,
-  IconPurchases,
-  IconReceive,
-  IconReports,
-  IconSales,
-  IconSuppliers,
-  IconTasks,
-} from '../components/icons';
+  Band,
+  Rubric,
+  Money,
+  Sparkline,
+  MonthAccount,
+  AgingStrip,
+  RankedBars,
+  ReorderBullets,
+  SolvencyRule,
+} from '../components/Ledger';
+import { IconTasks } from '../components/icons';
 
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -112,6 +112,8 @@ function useTrend() {
 
 export function DashboardPage() {
   const trend = useTrend();
+  const [party, setParty] = useState<PartyRef | null>(null);
+
   const { data, isLoading, error } = useQuery({
     queryKey: ['dashboard'],
     queryFn: api.getDashboard,
@@ -124,325 +126,236 @@ export function DashboardPage() {
     refetchOnWindowFocus: true,
   });
 
+  // Invoice-level balances, so receivables can be aged. The dashboard payload
+  // only carries party totals, and "Rs 40,000 owed" means something very
+  // different at 10 days than at 100.
+  const { data: outstanding } = useQuery({
+    queryKey: ['report', 'outstanding'],
+    queryFn: () => api.getReport('outstanding'),
+    staleTime: 0,
+  });
+
+  const aging = useMemo(() => {
+    const sales = ((outstanding as { sales?: Array<{ invoiceDate: string; balance: string }> })?.sales) ?? [];
+    const buckets = [
+      { label: 'Under 30 days', amount: 0 },
+      { label: '30 to 60', amount: 0 },
+      { label: '60 to 90', amount: 0 },
+      { label: 'Over 90 days', amount: 0 },
+    ];
+    const now = Date.now();
+    for (const s of sales) {
+      const days = Math.floor((now - new Date(s.invoiceDate).getTime()) / 86_400_000);
+      const i = days < 30 ? 0 : days < 60 ? 1 : days < 90 ? 2 : 3;
+      buckets[i].amount += Number(s.balance);
+    }
+    return buckets;
+  }, [outstanding]);
+
   if (isLoading) return <LoadingState label="Loading dashboard…" />;
   if (error) return <ErrorBanner message="Could not load the dashboard." />;
   if (!data) return null;
 
+  const f = data.finance;
+  const salesSeries = data.salesTrend.map((d) => Number(d.sales));
+  const expenseSeries = data.salesTrend.map((d) => Number(d.expenses));
+
+  const monthRows = [
+    { label: 'Revenue', value: Number(data.month.revenue), kind: 'total' as const },
+    { label: 'Cost of goods sold', value: -Number(data.month.cogs), kind: 'cost' as const },
+    { label: 'Running costs', value: -Number(data.month.expenses), kind: 'cost' as const },
+    { label: 'Net profit', value: Number(data.month.netProfit), kind: 'result' as const },
+  ];
+
+  const lowStock = (data.lowStockProducts ?? []).map((p) => ({
+    id: p.id,
+    name: p.name,
+    stock: Number(p.currentStock ?? 0),
+    threshold: Number(p.minStockThreshold ?? 0),
+    unit: p.unit,
+  }));
+
   return (
-    <div>
-      <div className="page-header">
-        <div>
-          <h1>Dashboard</h1>
-          <p className="subtitle">Where the shop stands right now.</p>
+    <div className="page-ledger">
+      {/* ---- 0. dateline ---- */}
+      <Band className="dateline-band">
+        <div className="dateline">
+          <h1>The Day Book</h1>
+          <span>{formatDate(todayIsoDate())}</span>
         </div>
-      </div>
+      </Band>
 
-      <div className="section-label">Today</div>
-      <div className="stat-grid">
-        <Stat label="Sales" value={formatMoney(data.today.sales)} icon={<IconSales size={13} />} />
-        <Stat label="Collections" value={formatMoney(data.today.collections)} icon={<IconReceive size={13} />} />
-        <Stat label="Purchases" value={formatMoney(data.today.purchases)} icon={<IconPurchases size={13} />} />
-        <Stat label="Expenses" value={formatMoney(data.today.expenses)} icon={<IconExpenses size={13} />} />
-      </div>
+      {/* ---- 1. the standing: the one saturated field on the page ---- */}
+      <Band>
+        <div className="standing">
+          <div className="standing-head">
+            <span>The standing</span>
+            <span>as at {formatDate(todayIsoDate())}</span>
+          </div>
+          <div className="standing-figures">
+            <div className="standing-figure lead">
+              <span className="label">Cash &amp; bank</span>
+              <span className="value"><Money value={data.cashAndBank} /></span>
+              <span className="sub">what you can spend today</span>
+            </div>
+            <div className="standing-figure">
+              <span className="label">On the shelves</span>
+              <span className="value"><Money value={data.stockValue} /></span>
+              <span className="sub">stock at cost</span>
+            </div>
+            <div className="standing-figure">
+              <span className="label">Net position</span>
+              <span className="value"><Money value={f.netPosition} /></span>
+              <span className="sub">held, plus owed to you, less owed</span>
+            </div>
+          </div>
+          <SolvencyRule receivable={Number(f.receivables.total)} payable={Number(f.payables.total)} />
+        </div>
+      </Band>
 
-      <div className="chart-grid">
-        <TrendChart
-          data={trend.points}
-          bucket={trend.bucket}
-          subtitle={trend.subtitle}
-          control={trend.control}
+      {/* ---- 2. today, against fourteen ordinary days ---- */}
+      <Band>
+        <Rubric seq="Schedule I" title="Today" note="Each figure against the last fourteen days." />
+        <div className="figures">
+          <div className="figure">
+            <span className="label">Sales</span>
+            <span className="value"><Money value={data.today.sales} /></span>
+            <Sparkline values={salesSeries} />
+          </div>
+          <div className="figure">
+            <span className="label">Collected</span>
+            <span className="value"><Money value={data.today.collections} /></span>
+          </div>
+          <div className="figure">
+            <span className="label">Purchases</span>
+            <span className="value"><Money value={data.today.purchases} /></span>
+          </div>
+          <div className="figure">
+            <span className="label">Expenses</span>
+            <span className="value"><Money value={data.today.expenses} /></span>
+            <Sparkline values={expenseSeries} />
+          </div>
+        </div>
+      </Band>
+
+      {/* ---- 3. the month argued as a statement ---- */}
+      <Band>
+        <Rubric
+          seq="Schedule II"
+          title="The month's account"
+          note="What came in, what it cost, and what is actually left."
         />
-        <BalanceDonut
-          /* Same per-party figures the Debit & Credit panel shows, so the two
-             halves of the dashboard cannot disagree with each other. */
-          receivables={Number(data.finance.receivables.total)}
-          payables={Number(data.finance.payables.total)}
-          cash={Number(data.cashAndBank)}
+        <MonthAccount rows={monthRows} />
+      </Band>
+
+      {/* ---- 4 & 5. the two sides of the khata ---- */}
+      <Band>
+        <div className="band-split">
+          <div>
+            <Rubric seq="Schedule III" title="Who owes you money" />
+            {aging.some((b) => b.amount > 0) && <AgingStrip buckets={aging} />}
+            <RankedBars
+              rows={f.receivables.parties}
+              tone="green"
+              onPick={(r) => setParty({ id: r.id, kind: 'FARMER', name: r.name })}
+              empty="No farmer owes you anything today."
+            />
+          </div>
+          <div>
+            <Rubric seq="Schedule IV" title="Who you owe" />
+            <RankedBars
+              rows={f.payables.parties}
+              tone="ink"
+              onPick={(r) => setParty({ id: r.id, kind: 'SUPPLIER', name: r.name })}
+              empty="You are square with every supplier."
+            />
+          </div>
+        </div>
+      </Band>
+
+      {/* ---- 6. calls on your attention ---- */}
+      <Band>
+        <Rubric
+          seq="Schedule V"
+          title="Calls on your attention"
+          note="Lines at or below their reorder level, and what has expired."
         />
-      </div>
+        <div className="band-split">
+          <ReorderBullets rows={lowStock} />
+          <div className="attention-notes">
+            {data.expiredCount > 0 && (
+              <p className="attention-line danger">
+                <strong>{data.expiredCount}</strong> batch(es) expired - pull them off the shelf.
+              </p>
+            )}
+            {data.expiringSoonCount > 0 && (
+              <p className="attention-line warn">
+                <strong>{data.expiringSoonCount}</strong> batch(es) expiring soon.
+              </p>
+            )}
+            {data.outOfStockCount > 0 && (
+              <p className="attention-line danger">
+                <strong>{data.outOfStockCount}</strong> product(s) out of stock.
+              </p>
+            )}
+            {data.pendingArrivalCount > 0 && (
+              <p className="attention-line">
+                <strong>{data.pendingArrivalCount}</strong> order(s) still to arrive.
+              </p>
+            )}
+            {data.expiredCount === 0 &&
+              data.expiringSoonCount === 0 &&
+              data.outOfStockCount === 0 &&
+              data.pendingArrivalCount === 0 && (
+                <p className="ledger-empty">Nothing on the shelves needs you today.</p>
+              )}
+          </div>
+        </div>
+      </Band>
 
-      <div className="section-label">Position</div>
-      <div className="stat-grid">
-        <Stat label="Cash & Bank" value={formatMoney(data.cashAndBank)} icon={<IconAccounts size={13} />} />
-        <Stat label="Stock Value" value={formatMoney(data.stockValue)} icon={<IconProducts size={13} />} />
-        <Stat
-          label="Receivables"
-          value={formatMoney(data.finance.receivables.total)}
-          icon={<IconFarmers size={13} />}
-          hint={`${data.finance.receivables.count} farmer(s) owe you`}
-        />
-        <Stat
-          label="Payables"
-          value={formatMoney(data.finance.payables.total)}
-          icon={<IconSuppliers size={13} />}
-          tone={Number(data.finance.payables.total) > 0 ? 'warn' : undefined}
-          hint={`${data.finance.payables.count} supplier(s) to pay`}
-        />
-      </div>
+      {/* ---- 7. the season ---- */}
+      <Band>
+        <Rubric seq="Schedule VI" title="The season" note={trend.subtitle} />
+        <TrendChart data={trend.points} bucket={trend.bucket} title="" subtitle="" control={trend.control} />
+      </Band>
 
-      <FinancePanel finance={data.finance} />
-
-      {data.pendingArrivals.length > 0 && <PendingArrivals rows={data.pendingArrivals} />}
-
-      <div className="section-label">This month</div>
-      <div className="stat-grid">
-        <Stat label="Sales" value={formatMoney(data.month.sales)} icon={<IconSales size={13} />} />
-        <Stat label="Gross Profit" value={formatMoney(data.month.grossProfit)} icon={<IconReports size={13} />} />
-        <Stat label="Net Profit" value={formatMoney(data.month.netProfit)} icon={<IconReports size={13} />} />
-        <Stat label="Expenses" value={formatMoney(data.month.expenses)} icon={<IconExpenses size={13} />} />
-      </div>
-
-      <div className="chart-grid narrow">
-        <TopProducts items={data.topProducts ?? []} />
-        <div className="card">
-          <h3>Pending tasks</h3>
-          {data.pendingTasks.length === 0 ? (
-            <EmptyState label="No pending tasks." />
-          ) : (
-            <ul className="list-plain">
-              {data.pendingTasks.map((t) => (
-                <li key={t.id}>
-                  {t.title}
-                  {t.dueDate ? <span className="muted-3"> - due {formatDate(t.dueDate)}</span> : null}
-                </li>
-              ))}
-            </ul>
-          )}
-          <div style={{ marginTop: 14 }}>
-            <Link to="/tasks" className="btn secondary small">
+      {/* ---- 8. the rest of the book ---- */}
+      <Band>
+        <div className="band-split">
+          <div>
+            <Rubric seq="Schedule VII" title="Top sellers" note="By value, this month." />
+            <TopProducts items={data.topProducts ?? []} />
+          </div>
+          <div>
+            <Rubric seq="Schedule VIII" title="Pending tasks" />
+            {data.pendingTasks.length === 0 ? (
+              <p className="ledger-empty">No pending tasks.</p>
+            ) : (
+              <ul className="list-plain">
+                {data.pendingTasks.map((t) => (
+                  <li key={t.id}>
+                    {t.title}
+                    {t.dueDate ? <span className="muted-3"> - due {formatDate(t.dueDate)}</span> : null}
+                  </li>
+                ))}
+              </ul>
+            )}
+            <Link to="/tasks" className="btn secondary small" style={{ marginTop: 'var(--s-3)' }}>
               <IconTasks size={14} />
               View all tasks
             </Link>
           </div>
         </div>
-      </div>
+      </Band>
 
-      <div className="section-label">Needs attention</div>
-      <div className="stat-grid">
-        <Stat
-          label="Low Stock"
-          value={String(data.lowStockCount)}
-          icon={<IconProducts size={13} />}
-          tone={data.lowStockCount > 0 ? 'warn' : undefined}
-        />
-        <Stat
-          label="Out of Stock"
-          value={String(data.outOfStockCount)}
-          icon={<IconAlert size={13} />}
-          tone={data.outOfStockCount > 0 ? 'danger' : undefined}
-        />
-        <Stat
-          label="Expiring Soon"
-          value={String(data.expiringSoonCount)}
-          icon={<IconAlert size={13} />}
-          tone={data.expiringSoonCount > 0 ? 'warn' : undefined}
-        />
-        <Stat
-          label="Expired"
-          value={String(data.expiredCount)}
-          icon={<IconAlert size={13} />}
-          tone={data.expiredCount > 0 ? 'danger' : undefined}
-        />
-      </div>
-
-      <div className="section-label">Overdue</div>
-      <div>
-        <div className="card">
-          {data.overdueSales.length === 0 && data.overduePurchases.length === 0 ? (
-            <EmptyState label="Nothing overdue - everything is on time." />
-          ) : (
-            <ul className="list-plain">
-              {data.overdueSales.map((s) => (
-                <li key={`s${s.id}`}>
-                  <strong>{s.invoiceNumber}</strong> · {s.farmer?.name} -{' '}
-                  <span className="num">{formatMoney(s.balance)}</span> due {formatDate(s.dueDate)}
-                </li>
-              ))}
-              {data.overduePurchases.map((p) => (
-                <li key={`p${p.id}`}>
-                  <strong>{p.invoiceNumber}</strong> · {p.supplier?.name} -{' '}
-                  <span className="num">{formatMoney(p.balance)}</span> due {formatDate(p.dueDate)}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Stat({
-  label,
-  value,
-  tone,
-  icon,
-  hint,
-}: {
-  label: string;
-  value: string;
-  tone?: 'warn' | 'danger';
-  icon?: ReactNode;
-  hint?: string;
-}) {
-  return (
-    <div className={`stat-card${tone ? ` ${tone}` : ''}`}>
-      <div className="label">
-        {icon}
-        {label}
-      </div>
-      <div className="value">{value}</div>
-      {hint && <div className="hint">{hint}</div>}
-    </div>
-  );
-}
-
-/**
- * Debit and credit, in both senses, side by side.
- *
- * "Debit" means two different things in a shop and conflating them is how
- * dashboards end up lying: on a farmer's account a debit is a sale that raised
- * what they owe, while on the cash box a debit is money going out. Both are
- * shown, each labelled with what it actually means here.
- */
-function FinancePanel({ finance }: { finance: FinanceSummary }) {
-  return (
-    <>
-      <div className="section-label">Debit &amp; Credit</div>
-      <div className="stat-grid">
-        <Stat
-          label="Total Debit"
-          value={formatMoney(finance.ledger.totalDebit)}
-          icon={<IconReports size={13} />}
-          hint="Raised on farmer & supplier accounts"
-        />
-        <Stat
-          label="Total Credit"
-          value={formatMoney(finance.ledger.totalCredit)}
-          icon={<IconReports size={13} />}
-          hint="Settled on those accounts"
-        />
-        <Stat
-          label="Money In"
-          value={formatMoney(finance.money.in)}
-          icon={<IconReceive size={13} />}
-          hint="Into cash & bank, all time"
-        />
-        <Stat
-          label="Money Out"
-          value={formatMoney(finance.money.out)}
-          icon={<IconExpenses size={13} />}
-          hint="Out of cash & bank, all time"
-        />
-      </div>
-
-      <div className="chart-grid narrow">
-        <div className="card">
-          <h3>Who owes what</h3>
-          <div className="ledger-split">
-            <PartyColumn
-              title="Farmers owe you"
-              total={finance.receivables.total}
-              rows={finance.receivables.parties}
-              extra={
-                Number(finance.receivables.advances) > 0
-                  ? `${formatMoney(finance.receivables.advances)} sitting as farmer credit`
-                  : undefined
-              }
-              to="/farmers"
-            />
-            <PartyColumn
-              title="You owe suppliers"
-              total={finance.payables.total}
-              rows={finance.payables.parties}
-              extra={
-                Number(finance.payables.advances) > 0
-                  ? `${formatMoney(finance.payables.advances)} paid in advance`
-                  : undefined
-              }
-              to="/suppliers"
-            />
-          </div>
-          <p className="muted-3" style={{ fontSize: 12, marginBottom: 0 }}>
-            Each party is counted on its own, so one farmer in credit never hides another's debt.
-          </p>
-        </div>
-
-        <div className="card">
-          <h3>Company accounts</h3>
-          <div className="card" style={{ padding: 0, overflowX: 'auto' }}>
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Account</th>
-                  <th className="text-right">In</th>
-                  <th className="text-right">Out</th>
-                  <th className="text-right">Balance</th>
-                </tr>
-              </thead>
-              <tbody>
-                {finance.accounts.map((a) => (
-                  <tr key={a.id}>
-                    <td>
-                      {a.name}
-                      <div className="cell-muted" style={{ fontSize: 11 }}>{a.type === 'BANK' ? 'Bank' : 'Cash'}</div>
-                    </td>
-                    <td className="text-right">{formatMoney(a.moneyIn)}</td>
-                    <td className="text-right">{formatMoney(a.moneyOut)}</td>
-                    <td className="text-right" style={{ fontWeight: 600 }}>{formatMoney(a.balance)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div className="row-between" style={{ marginTop: 10, fontWeight: 600 }}>
-            <span>Net position</span>
-            <span>{formatMoney(finance.netPosition)}</span>
-          </div>
-          <p className="muted-3" style={{ fontSize: 12, marginBottom: 0 }}>
-            What you hold, plus what is owed to you, less what you owe.
-          </p>
-        </div>
-      </div>
-    </>
-  );
-}
-
-function PartyColumn({
-  title,
-  total,
-  rows,
-  extra,
-  to,
-}: {
-  title: string;
-  total: string;
-  rows: Array<{ id: number; name: string; amount: string }>;
-  extra?: string;
-  to: string;
-}) {
-  return (
-    <div>
-      <div className="row-between" style={{ fontWeight: 600, marginBottom: 6 }}>
-        <span>{title}</span>
-        <span>{formatMoney(total)}</span>
-      </div>
-      {rows.length === 0 ? (
-        <p className="muted-3" style={{ fontSize: 12.5 }}>Nothing outstanding.</p>
-      ) : (
-        <ul className="list-plain">
-          {rows.map((r) => (
-            <li key={r.id} className="row-between">
-              <span>{r.name}</span>
-              <span className="num">{formatMoney(r.amount)}</span>
-            </li>
-          ))}
-        </ul>
+      {data.pendingArrivals.length > 0 && (
+        <Band>
+          <Rubric seq="Schedule IX" title="Waiting to arrive" note="Ordered and paid for, perhaps - but not on the shelf, so not in stock value." />
+          <PendingArrivals rows={data.pendingArrivals} />
+        </Band>
       )}
-      {extra && <p className="muted-3" style={{ fontSize: 12 }}>{extra}</p>}
-      <Link to={to} className="btn secondary small" style={{ marginTop: 6 }}>
-        Open
-      </Link>
+
+      {party && <PartyDetail party={party} onClose={() => setParty(null)} />}
     </div>
   );
 }
@@ -472,8 +385,8 @@ function PendingArrivals({ rows }: { rows: PendingArrival[] }) {
                 <td className="cell-muted">{r.invoiceNumber}</td>
                 <td className="cell-muted">{formatDate(r.invoiceDate)}</td>
                 <td className="cell-muted">{r.expectedArrivalDate ? formatDate(r.expectedArrivalDate) : 'not given'}</td>
-                <td className="text-right">{formatMoney(r.total)}</td>
-                <td className="text-right">{formatMoney(r.balance)}</td>
+                <td className="text-right"><Money value={r.total} /></td>
+                <td className="text-right"><Money value={r.balance} /></td>
                 <td>
                   <span className={`badge ${r.arrivalStatus === 'PARTIAL' ? 'partial' : 'unpaid'}`}>
                     {r.arrivalStatus === 'PARTIAL' ? 'Part arrived' : 'Pending'}
