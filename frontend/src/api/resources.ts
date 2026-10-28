@@ -260,7 +260,7 @@ export const deleteSalaryPayment = (id: number) =>
 export type AdminResource =
   | 'expenses' | 'sales' | 'purchases' | 'users'
   | 'farmer-payments' | 'supplier-payments'
-  | 'farmers' | 'suppliers' | 'products' | 'purchase-receipts';
+  | 'farmers' | 'suppliers' | 'products' | 'purchase-receipts' | 'sale-returns';
 export const adminUpdateExpense = (id: number, data: Record<string, unknown>) =>
   apiRequest(`/api/admin/expenses/${id}`, { method: 'PATCH', body: data });
 export const adminUpdateSale = (id: number, data: Record<string, unknown>) =>
