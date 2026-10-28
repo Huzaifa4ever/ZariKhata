@@ -11,6 +11,7 @@ import { PaymentStatusFields, type PayStatus } from '../components/PaymentStatus
 import { EditInvoiceButton } from '../components/EditInvoiceButton';
 import { PrintInvoiceButton } from '../components/PrintInvoiceButton';
 import { PartyDetail, type PartyRef } from '../components/PartyDetail';
+import { SaleReturnModal } from '../components/SaleReturnModal';
 import { InvoiceDetailModal } from '../components/InvoiceDetailModal';
 
 interface LineItem {
@@ -23,6 +24,7 @@ interface LineItem {
 export function SalesPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [detail, setDetail] = useState<PartyRef | null>(null);
+  const [returning, setReturning] = useState<number | null>(null);
   const [invoiceFor, setInvoiceFor] = useState<string | null>(null);
   const qc = useQueryClient();
   const { data, isLoading, error } = useQuery({ queryKey: ['sales'], queryFn: () => api.listSales() });
@@ -87,6 +89,9 @@ export function SalesPage() {
                   </td>
                   <td>
                     <div className="row" style={{ gap: 2, justifyContent: 'flex-end' }}>
+                    <button className="btn ghost small" onClick={() => setReturning(s.id)} title="Take goods back">
+                      Return
+                    </button>
                     <PrintInvoiceButton invoiceNumber={s.invoiceNumber} />
                     <EditInvoiceButton
                       kind="sale"
@@ -111,6 +116,8 @@ export function SalesPage() {
       )}
 
       {detail && <PartyDetail party={detail} onClose={() => setDetail(null)} />}
+
+      {returning !== null && <SaleReturnModal saleId={returning} onClose={() => setReturning(null)} />}
       {invoiceFor && <InvoiceDetailModal invoiceNumber={invoiceFor} onClose={() => setInvoiceFor(null)} />}
 
       {showCreate && (
