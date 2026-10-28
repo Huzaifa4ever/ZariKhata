@@ -52,7 +52,8 @@ export interface PrintReportOptions {
 
 function tableHtml(section: PrintSection): string {
   const { heading, columns, rows, emptyLabel } = section;
-  const head = `<h2 class="section">${esc(heading)}</h2>`;
+  // A statement is one table and needs no section heading above it.
+  const head = heading ? `<h2 class="section">${esc(heading)}</h2>` : '';
 
   if (rows.length === 0) {
     return `${head}<div class="empty">${esc(emptyLabel ?? 'Nothing recorded in this period.')}</div>`;
@@ -75,7 +76,11 @@ function tableHtml(section: PrintSection): string {
           return `<td class="${cls}">${esc(value)}</td>`;
         })
         .join('');
-      return `<tr>${tds}</tr>`;
+      // `_row` is a reserved key, not a column: it lets a statement mark a
+      // row as an invoice, one of its product lines, or a payment, so the
+      // printed page can show the structure instead of a flat list.
+      const rowClass = typeof row._row === 'string' ? row._row : '';
+      return `<tr class="${rowClass}">${tds}</tr>`;
     })
     .join('');
 

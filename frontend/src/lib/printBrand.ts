@@ -102,6 +102,20 @@ export const PRINT_CSS = `
        color: #41504a; background: #eef3f0; border-bottom: 1px solid #cfdad4;
        padding: 6px 7px; font-weight: 700; }
   td { padding: 5.5px 7px; border-bottom: 1px solid #e8eeeb; vertical-align: top; }
+
+  /* --- statement row kinds ---------------------------------------------
+     A statement reads as a story, not a flat list: an invoice line opens a
+     purchase, its product lines sit underneath it, and a payment closes it
+     off. Row weight is what carries that, so the farmer can follow it with a
+     finger. */
+  tr.inv td { border-bottom: 0; padding-top: 9px; font-weight: 600; }
+  tr.item td { border-bottom: 0; padding-top: 1px; padding-bottom: 1px;
+               font-size: 9pt; color: #44544d; }
+  tr.item td:first-child { padding-left: 18px; }
+  tr.pay td { color: #0a6e42; }
+  tr.pay td:first-child { font-style: italic; }
+  tr.close td { border-bottom: 1.5px solid #cfdcd6; padding-bottom: 9px; }
+  tr.open-bal td { font-weight: 600; background: #f7faf8; }
   tbody tr:nth-child(even) td { background: #fbfcfb; }
   .right { text-align: right; font-variant-numeric: tabular-nums; }
   .center { text-align: center; }
