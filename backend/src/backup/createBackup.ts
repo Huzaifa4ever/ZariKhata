@@ -33,6 +33,10 @@ async function runMysqldump(db: ReturnType<typeof parseDatabaseUrl>, outFile: st
     '--port', db.port,
     '--user', db.user,
     '--single-transaction', // consistent InnoDB snapshot, no table locks
+    // Without this mysqldump reads INFORMATION_SCHEMA.FILES, which needs the
+    // global PROCESS privilege. The app's DB user is scoped to its own
+    // database on purpose, and a backup is not a reason to widen that.
+    '--no-tablespaces',
     '--routines',
     '--triggers',
     '--default-character-set=utf8mb4',
