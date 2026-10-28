@@ -53,6 +53,43 @@
     system-ui, Roboto, sans-serif;
   --font-mono: 'Cascadia Mono', 'JetBrains Mono', 'SF Mono', Consolas, 'Liberation Mono', monospace;
 
+  /* --- type scale -------------------------------------------------------
+     The old sheet used 23 distinct sizes (every 0.5px step from 9.5 to 15 was
+     occupied) and 9 weights. Five of those weights (380/550/620/640/650) only
+     exist in Segoe UI Variable; everywhere else CSS font matching searches
+     upward from 500, so they all resolved to 700 and every heading, value and
+     link rendered identically. Eight sizes, four real weights.
+
+     The point of the scale is the RANGE: 11.5px to 56px is 4.9x across the
+     page, where the old sheet managed 2.1x and so had no way to say that one
+     number mattered more than another. */
+  --t-hero: clamp(38px, 5vw, 56px);
+  --t-figure: 30px;
+  --t-sub: 19px;
+  --t-head: 19px;
+  --t-body: 14px;
+  --t-cell: 13.5px;
+  --t-label: 11.5px;
+  --t-micro: 11px;
+
+  --w-regular: 400;
+  --w-medium: 500;
+  --w-semi: 600;
+  --w-bold: 700;
+
+  /* --- spacing scale, 4px base -------------------------------------------
+     There were 29 distinct spacing values before this, including every
+     integer from 1 to 16. The eye reads that inconsistency even when it
+     cannot name it, and it is the single loudest "generated" tell. */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 20px;
+  --s-6: 28px;
+  --s-7: 40px;
+  --s-8: 56px;
+
   --r-sm: 6px;
   --r-md: 9px;
   --r-lg: 13px;
@@ -91,6 +128,16 @@
   --border: #d5e3dc;
   --border-strong: #bdcfc6;
   --border-hairline: #e3ece8;
+
+  /* --- rule ramp ---------------------------------------------------------
+     The ledger's whole structural vocabulary is graded rules, so they are cut
+     as deliberately as the type: three steps at 1.31 / 1.75 / 2.56 against
+     white. Deliberately NOT aliases of --border*, which collapse to two
+     usable grades. Both themes are tuned to the same three ratios so the
+     dashboard's structure is theme-invariant. */
+  --rule-hair: #d7e4dd;
+  --rule: #b2c9bf;
+  --rule-strong: #8da89c;
 
   --text: #12261e;
   --text-2: #4e5f57;
@@ -152,9 +199,11 @@
 :root[data-theme='dark'] {
   color-scheme: dark;
 
-  --bg: #0a130f;
+  /* Desk pushed down and surface lifted: the old pair sat at 1.12:1, which is
+     invisible - a card did not read as resting ON anything. */
+  --bg: #070f0c;
   --bg-tint: radial-gradient(1100px 580px at 10% -12%, rgba(40, 173, 94, 0.16) 0%, transparent 60%);
-  --surface: #151f1a;
+  --surface: #17211c;
   --surface-2: #1d2924;
   --surface-3: #28352f;
   --surface-inset: #0f1713;
@@ -162,6 +211,13 @@
   --border: #2c3b34;
   --border-strong: #42554c;
   --border-hairline: #222e29;
+
+  /* 1.35 / 1.76 / 2.69 on --surface - matched to light's 1.31 / 1.75 / 2.56.
+     Dark's structure comes from rules, not from stacking more surfaces:
+     chasing a surface step costs rule contrast, a tuned ramp costs nothing. */
+  --rule-hair: #2b3831;
+  --rule: #3a4a42;
+  --rule-strong: #52665c;
 
   --text: #e5f1eb;
   --text-2: #abbdb4;
@@ -561,10 +617,13 @@ hr {
 
 .content {
   flex: 1;
-  padding: 26px 24px 56px;
+  padding: var(--s-6) var(--s-5) var(--s-8);
   overflow-y: auto;
   max-width: 1500px;
   width: 100%;
+  /* max-width with no auto margin is a left-aligned column pretending to be a
+     centred one - on a 2560px screen everything sat hard left. */
+  margin-inline: auto;
 }
 
 /* ============================== THEME TOGGLE ============================== */
@@ -1580,12 +1639,15 @@ table.data-table {
   stroke: var(--brand-vivid);
   stroke-width: 1.8;
 }
+/* Solid ink, not gold at 55%. Gold now means age and only age, so the aging
+   ramp can be read without a legend; and a mark at 55% was exactly the
+   "turn down the opacity" habit this redesign exists to remove. */
 .chart-svg .bar-expense {
-  fill: var(--accent);
-  opacity: 0.55;
+  fill: var(--text-2);
+  opacity: 1;
 }
 .chart-svg .bar-expense:hover {
-  opacity: 0.75;
+  fill: var(--text);
 }
 
 /* --- donut --- */
@@ -2928,4 +2990,694 @@ select option {
   .ledger-split {
     grid-template-columns: 1fr;
   }
+}
+
+/* ==========================================================================
+   THE LEDGER - dashboard composition
+   --------------------------------------------------------------------------
+   A printed statement, not a grid of cards. Figures hang on a measure,
+   structure is carried by graded rules, and colour is ink: four pigments,
+   one meaning each, full strength, in few and large places.
+
+   The page deliberately stops using .card and .stat-card. Both keep their
+   chrome everywhere else in the app - nothing in the other sixteen files
+   moves - except where a .card genuinely wraps a scrolling table, which
+   keeps every sticky header and sticky first column intact.
+   ========================================================================== */
+
+.page-ledger {
+  --measure: 1120px;
+  /* On the dashboard the page IS the paper. --bg-tint, the 13%/16% green
+     radial wash, is the product's only decorative colour and the literal
+     complaint; it is suppressed here rather than deepened. */
+  background: var(--surface);
+  background-image: none;
+  margin: calc(var(--s-6) * -1) calc(var(--s-5) * -1) calc(var(--s-8) * -1);
+  padding: var(--s-6) var(--s-5) var(--s-8);
+  min-height: 100%;
+}
+
+.band {
+  max-width: var(--measure);
+  margin-inline: auto;
+  padding-block: var(--s-6);
+}
+
+.band + .band {
+  border-top: 1px solid var(--rule-hair);
+}
+
+/* ----------------------------- rubric ----------------------------- */
+
+.rubric {
+  margin: 0 0 var(--s-4);
+}
+
+.rubric .seq {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  font-size: var(--t-micro);
+  font-weight: var(--w-semi);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  line-height: 1;
+}
+
+/* The rule runs out of the numeral and fades - it is a ledger's rule, not a
+   full-width divider competing with the band joins. */
+.rubric .seq::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, var(--rule) 0%, var(--rule-hair) 60%, transparent 100%);
+}
+
+.rubric h2 {
+  margin: var(--s-2) 0 0;
+  font-family: var(--font-display);
+  font-size: var(--t-head);
+  font-weight: var(--w-semi);
+  letter-spacing: -0.018em;
+  color: var(--text);
+}
+
+.rubric-note {
+  margin: 2px 0 0;
+  font-size: var(--t-cell);
+  color: var(--text-3);
+}
+
+/* ------------------------------ money ------------------------------ */
+/* currentColor + opacity, never --text-3: the same component sets on white
+   paper and on the green ink block. */
+
+.money {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.money .sym {
+  font-size: 0.5em;
+  font-weight: var(--w-medium);
+  color: currentColor;
+  opacity: 0.62;
+  margin-right: 0.24em;
+  vertical-align: 0.4em;
+}
+
+.money .frac {
+  font-size: 0.56em;
+  color: currentColor;
+  opacity: 0.62;
+  margin-left: 0.02em;
+}
+
+/* ====================== ZONE 1 - THE STANDING ======================= */
+/* The signature. One large saturated field, the way a printed annual report
+   opens on a colour panel. White on green-800 is 8.3:1, on green-900 11.2:1,
+   and it renders identically in both themes - so the page's identity does
+   not depend on which theme you are in. */
+
+.standing {
+  background: linear-gradient(145deg, #00451c 0%, #005b27 100%);
+  border-radius: var(--r-xl);
+  padding: var(--s-6) var(--s-6) var(--s-5);
+  color: #ffffff;
+  position: relative;
+  overflow: hidden;
+}
+
+/* A single hairline of the vivid green along the top edge - the one place the
+   bright end of the ramp appears, and it earns it by being the masthead. */
+.standing::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 3px;
+  background: linear-gradient(90deg, var(--green-400), var(--green-500) 55%, transparent);
+}
+
+.standing-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-4);
+  font-size: var(--t-micro);
+  font-weight: var(--w-semi);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.standing-figures {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--s-5);
+  margin-top: var(--s-5);
+}
+
+.standing-figure .label {
+  font-size: var(--t-micro);
+  font-weight: var(--w-semi);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.standing-figure .value {
+  display: block;
+  margin-top: var(--s-2);
+  font-family: var(--font-display);
+  font-size: var(--t-figure);
+  font-weight: var(--w-semi);
+  letter-spacing: -0.028em;
+  line-height: 1.05;
+  color: #ffffff;
+}
+
+/* Exactly one number on the page is allowed to be the hero. */
+.standing-figure.lead .value {
+  font-size: var(--t-hero);
+  font-weight: var(--w-bold);
+  letter-spacing: -0.032em;
+  line-height: 1;
+}
+
+.standing-figure .sub {
+  display: block;
+  margin-top: var(--s-1);
+  font-size: var(--t-cell);
+  color: rgba(255, 255, 255, 0.72);
+}
+
+/* --- solvency rule: replaces a 132px donut that encoded one ratio --- */
+
+.solvency {
+  margin-top: var(--s-5);
+  padding-top: var(--s-4);
+  border-top: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.solvency-bar {
+  height: 8px;
+  border-radius: var(--r-full);
+  background: rgba(255, 255, 255, 0.18);
+  overflow: hidden;
+}
+
+.solvency-in {
+  height: 100%;
+  background: var(--green-300);
+  border-radius: var(--r-full);
+}
+
+.solvency-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2) var(--s-5);
+  margin-top: var(--s-3);
+  font-size: var(--t-cell);
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.solvency-key .dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--r-full);
+  margin-right: var(--s-2);
+}
+
+.solvency-key .dot.in {
+  background: var(--green-300);
+}
+
+.solvency-key .dot.out {
+  background: rgba(255, 255, 255, 0.4);
+}
+
+/* ========================= ZONE 2 - TODAY ========================== */
+
+.figures {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0;
+}
+
+.figure {
+  padding: 0 var(--s-5);
+  border-left: 1px solid var(--rule-hair);
+}
+
+.figure:first-child {
+  padding-left: 0;
+  border-left: 0;
+}
+
+.figure .label {
+  font-size: var(--t-micro);
+  font-weight: var(--w-semi);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.figure .value {
+  display: block;
+  margin-top: var(--s-2);
+  font-family: var(--font-display);
+  font-size: var(--t-figure);
+  font-weight: var(--w-semi);
+  letter-spacing: -0.028em;
+  color: var(--text);
+}
+
+.figure .spark {
+  display: block;
+  width: 100%;
+  height: 30px;
+  margin-top: var(--s-3);
+}
+
+.spark-line {
+  fill: none;
+  stroke: var(--brand-vivid);
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.spark-median {
+  stroke: var(--rule);
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
+  vector-effect: non-scaling-stroke;
+}
+
+.spark-dot {
+  fill: var(--brand-vivid);
+}
+
+.spark-dot.under {
+  fill: var(--text-3);
+}
+
+/* =================== ZONE 3 - THE MONTH'S ACCOUNT =================== */
+/* One shared scale across every row, so the deductions are visibly eating
+   the revenue. Four separate cards cannot show that relationship at all. */
+
+.account {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+}
+
+.account-row {
+  display: grid;
+  grid-template-columns: 170px 1fr auto;
+  align-items: center;
+  gap: var(--s-4);
+}
+
+.account-label {
+  font-size: var(--t-cell);
+  color: var(--text-2);
+}
+
+.account-track {
+  height: 20px;
+  display: flex;
+  align-items: center;
+}
+
+.account-bar {
+  height: 20px;
+  border-radius: 2px;
+  min-width: 2px;
+}
+
+/* green = money that is yours; ink = money gone out. Solid, not tinted. */
+.account-row.total .account-bar {
+  background: var(--brand);
+}
+
+.account-row.cost .account-bar {
+  background: var(--text-2);
+}
+
+.account-row.result .account-bar {
+  background: var(--brand-vivid);
+}
+
+.account-row.result.negative .account-bar {
+  background: var(--danger);
+}
+
+.account-value {
+  font-family: var(--font-display);
+  font-size: var(--t-sub);
+  font-weight: var(--w-semi);
+  letter-spacing: -0.02em;
+  color: var(--text);
+  text-align: right;
+}
+
+.account-row.result {
+  padding-top: var(--s-3);
+  border-top: 1px solid var(--rule-strong);
+}
+
+.account-row.result .account-label,
+.account-row.result .account-value {
+  font-weight: var(--w-semi);
+  color: var(--text);
+}
+
+.account-row.result.negative .account-value {
+  color: var(--danger-text);
+}
+
+/* ===================== ZONE 4 - RECEIVABLES AGE ===================== */
+/* Gold is age and nothing else, so the ramp reads without a legend. Past 90
+   days goes red - at that point it is not ageing, it is lost. */
+
+.aging-bar {
+  display: flex;
+  height: 14px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--surface-3);
+}
+
+.aging-seg.age-0 { background: var(--gold-300); }
+.aging-seg.age-1 { background: var(--gold-400); }
+.aging-seg.age-2 { background: var(--gold-600); }
+.aging-seg.age-3 { background: var(--danger); }
+
+.aging-key {
+  list-style: none;
+  margin: var(--s-3) 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2) var(--s-5);
+  font-size: var(--t-cell);
+  color: var(--text-2);
+}
+
+.aging-key li {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.age-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex: none;
+}
+
+.age-swatch.age-0 { background: var(--gold-300); }
+.age-swatch.age-1 { background: var(--gold-400); }
+.age-swatch.age-2 { background: var(--gold-600); }
+.age-swatch.age-3 { background: var(--danger); }
+
+.aging-key-label {
+  color: var(--text-3);
+}
+
+/* ======================= RANKED PARTY LISTS ======================== */
+
+.ranked {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ranked li + li {
+  border-top: 1px solid var(--rule-hair);
+}
+
+.ranked-row {
+  display: grid;
+  grid-template-columns: minmax(110px, 1.7fr) minmax(44px, 1fr) auto;
+  align-items: center;
+  gap: var(--s-3);
+  width: 100%;
+  padding: var(--s-3) 0;
+  background: none;
+  border: 0;
+  text-align: left;
+  color: var(--text);
+  font-size: var(--t-cell);
+  cursor: pointer;
+}
+
+.ranked-row:disabled {
+  cursor: default;
+}
+
+.ranked-row:not(:disabled):hover .ranked-name {
+  color: var(--brand-text);
+}
+
+.ranked-name {
+  font-weight: var(--w-medium);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ranked-track {
+  height: 10px;
+  background: var(--surface-3);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.ranked-bar {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+}
+
+.ranked-green .ranked-bar { background: var(--brand); }
+.ranked-ink .ranked-bar { background: var(--text-2); }
+
+.ranked-value {
+  font-family: var(--font-display);
+  font-weight: var(--w-semi);
+  font-size: var(--t-cell);
+  text-align: right;
+}
+
+/* ======================== REORDER BULLETS ========================= */
+
+.bullets {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.bullets li {
+  display: grid;
+  grid-template-columns: minmax(110px, 1.7fr) minmax(44px, 1fr) auto;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-3) 0;
+  font-size: var(--t-cell);
+}
+
+.bullets li + li {
+  border-top: 1px solid var(--rule-hair);
+}
+
+.bullet-name {
+  font-weight: var(--w-medium);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bullet-track {
+  position: relative;
+  height: 10px;
+  background: var(--surface-3);
+  border-radius: 2px;
+}
+
+.bullet-bar {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--gold-500);
+  border-radius: 2px;
+}
+
+.bullet-bar.out {
+  background: var(--danger);
+}
+
+/* The reorder threshold: past it is fine, short of it is a call on you. */
+.bullet-tick {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  background: var(--text);
+  border-radius: 1px;
+}
+
+.bullet-qty {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+  text-align: right;
+}
+
+.ledger-empty {
+  margin: 0;
+  padding: var(--s-4) 0;
+  font-size: var(--t-cell);
+  color: var(--text-3);
+}
+
+/* --------------------------- two-up bands --------------------------- */
+
+.band-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s-7);
+}
+
+/* ---------------------------- responsive ---------------------------- */
+
+@media (max-width: 900px) {
+  .band-split {
+    grid-template-columns: 1fr;
+    gap: var(--s-6);
+  }
+  .standing-figures {
+    grid-template-columns: 1fr;
+    gap: var(--s-4);
+  }
+  .figures {
+    grid-template-columns: 1fr 1fr;
+    gap: var(--s-4) 0;
+  }
+  .figure:nth-child(odd) {
+    padding-left: 0;
+    border-left: 0;
+  }
+  .account-row {
+    grid-template-columns: 1fr auto;
+    grid-template-areas: 'label value' 'track track';
+    gap: var(--s-2) var(--s-3);
+  }
+  .account-label { grid-area: label; }
+  .account-value { grid-area: value; }
+  .account-track { grid-area: track; }
+}
+
+@media (max-width: 560px) {
+  .page-ledger {
+    --measure: 100%;
+  }
+  .figures {
+    grid-template-columns: 1fr;
+  }
+  .figure {
+    padding: 0;
+    border-left: 0;
+  }
+  .figure + .figure {
+    padding-top: var(--s-4);
+    border-top: 1px solid var(--rule-hair);
+  }
+  .standing {
+    padding: var(--s-5) var(--s-4);
+  }
+  .ranked-row,
+  .bullets li {
+    grid-template-columns: 1fr auto;
+    grid-template-areas: 'name value' 'track track';
+    gap: var(--s-2) var(--s-3);
+  }
+  .ranked-name, .bullet-name { grid-area: name; }
+  .ranked-value, .bullet-qty { grid-area: value; }
+  .ranked-track, .bullet-track { grid-area: track; }
+}
+
+/* ---------------------------- dateline ---------------------------- */
+/* A masthead rather than a page-header: the 2px brand rule is the one place
+   the top of the page carries colour, and it is doing a job. */
+
+.dateline-band {
+  padding-block: var(--s-4) var(--s-5);
+}
+
+.dateline {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-4);
+  flex-wrap: wrap;
+  padding-top: var(--s-3);
+  border-top: 2px solid var(--brand);
+}
+
+.dateline h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--t-head);
+  font-weight: var(--w-semi);
+  letter-spacing: -0.018em;
+}
+
+.dateline span {
+  font-size: var(--t-micro);
+  font-weight: var(--w-semi);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.attention-notes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+
+.attention-line {
+  margin: 0;
+  padding: var(--s-3) var(--s-4);
+  border-left: 3px solid var(--rule-strong);
+  background: var(--surface-2);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  font-size: var(--t-cell);
+  color: var(--text-2);
+}
+
+.attention-line.danger {
+  border-left-color: var(--danger);
+}
+
+.attention-line.warn {
+  border-left-color: var(--gold-500);
+}
+
+.attention-line strong {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The season chart sheds its card chrome inside a band - the band already
+   provides the structure, and a box inside a box is the old problem. */
+.page-ledger .chart {
+  background: none;
+  border: 0;
+  box-shadow: none;
+  padding: 0;
 }
