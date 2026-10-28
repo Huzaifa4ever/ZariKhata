@@ -200,3 +200,116 @@ describe('admin mode', () => {
     expect(refused.status).toBe(400);
   });
 });
+
+/**
+ * Returns had a complete, tested backend and no screen at all, so this path
+ * was never exercised end to end. The undo matters as much as the return:
+ * deleting a sale refuses while returns exist against it, so without a way to
+ * remove one, a mis-keyed return trapped the invoice forever.
+ */
+describe('sale returns', () => {
+  let ctx: TestContext;
+  let auth: string;
+
+  beforeAll(async () => {
+    ctx = await getTestContext();
+    auth = `Bearer ${ctx.token}`;
+  });
+
+  async function soldSale(qty = 10, price = 100) {
+    const supplier = await request(app).post('/api/suppliers').set('Authorization', auth).send({ name: `S ${uniqueSuffix()}` });
+    const product = await request(app)
+      .post('/api/products')
+      .set('Authorization', auth)
+      .send({ sku: `SKU-${uniqueSuffix()}`, name: 'P', unit: 'bottle', sellingPrice: price });
+    await request(app)
+      .post('/api/purchases')
+      .set('Authorization', auth)
+      .send({
+        supplierId: supplier.body.id,
+        invoiceDate: new Date().toISOString(),
+        items: [{ productId: product.body.id, quantity: 100, unitCost: 50 }],
+      });
+    const farmer = await request(app).post('/api/farmers').set('Authorization', auth).send({ name: `F ${uniqueSuffix()}` });
+    const sale = await request(app)
+      .post('/api/sales')
+      .set('Authorization', auth)
+      .send({
+        farmerId: farmer.body.id,
+        invoiceDate: new Date().toISOString(),
+        items: [{ productId: product.body.id, quantity: qty, unitPrice: price }],
+      });
+    return { product: product.body, farmer: farmer.body, sale: sale.body };
+  }
+
+  const stockOf = async (id: number) =>
+    Number((await request(app).get(`/api/products/${id}`).set('Authorization', auth)).body.currentStock);
+  const owes = async (id: number) =>
+    Number((await request(app).get(`/api/farmers/${id}`).set('Authorization', auth)).body.outstandingBalance);
+
+  it('a good return restocks the shelf and credits the farmer', async () => {
+    const { product, farmer, sale } = await soldSale();
+    expect(await stockOf(product.id)).toBe(90);
+    expect(await owes(farmer.id)).toBe(1000);
+
+    const ret = await request(app)
+      .post('/api/sale-returns')
+      .set('Authorization', auth)
+      .send({ saleId: sale.id, items: [{ saleItemId: sale.items[0].id, quantity: 2, condition: 'SALEABLE' }] });
+
+    expect(ret.status).toBe(201);
+    expect(await stockOf(product.id)).toBe(92);
+    expect(await owes(farmer.id)).toBe(800);
+  });
+
+  it('a damaged return credits the farmer but never goes back on the shelf', async () => {
+    const { product, farmer, sale } = await soldSale();
+    await request(app)
+      .post('/api/sale-returns')
+      .set('Authorization', auth)
+      .send({ saleId: sale.id, items: [{ saleItemId: sale.items[0].id, quantity: 3, condition: 'DAMAGED' }] });
+
+    expect(await stockOf(product.id)).toBe(90);
+    expect(await owes(farmer.id)).toBe(700);
+  });
+
+  it('refuses to return more than was sold', async () => {
+    const { sale } = await soldSale();
+    const over = await request(app)
+      .post('/api/sale-returns')
+      .set('Authorization', auth)
+      .send({ saleId: sale.id, items: [{ saleItemId: sale.items[0].id, quantity: 11 }] });
+    expect(over.status).toBe(409);
+  });
+
+  it('undoing a return puts the stock, the farmer and the invoice back', async () => {
+    const { product, farmer, sale } = await soldSale();
+    const ret = await request(app)
+      .post('/api/sale-returns')
+      .set('Authorization', auth)
+      .send({ saleId: sale.id, items: [{ saleItemId: sale.items[0].id, quantity: 4, condition: 'SALEABLE' }] });
+    expect(await stockOf(product.id)).toBe(94);
+    expect(await owes(farmer.id)).toBe(600);
+
+    const undone = await request(app).delete(`/api/admin/sale-returns/${ret.body.id}`).set('Authorization', auth);
+    expect(undone.status).toBe(200);
+
+    expect(await stockOf(product.id)).toBe(90);
+    expect(await owes(farmer.id)).toBe(1000);
+    const after = await request(app).get(`/api/sales/${sale.id}`).set('Authorization', auth);
+    expect(Number(after.body.balance)).toBe(1000);
+  });
+
+  it('an employee cannot undo a return', async () => {
+    const username = `emp${uniqueSuffix()}`;
+    await request(app)
+      .post('/api/users')
+      .set('Authorization', auth)
+      .send({ name: 'Staff', username, password: 'EmpPass123!', role: 'EMPLOYEE' });
+    const login = await request(app).post('/api/auth/login').send({ username, password: 'EmpPass123!' });
+    const res = await request(app)
+      .delete('/api/admin/sale-returns/1')
+      .set('Authorization', `Bearer ${login.body.token}`);
+    expect(res.status).toBe(403);
+  });
+});
