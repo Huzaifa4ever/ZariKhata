@@ -80,11 +80,12 @@ export function PartyDetail({ party, onClose }: { party: PartyRef; onClose: () =
   function printStatement() {
     if (!stmt) return;
 
+    // Two words, the way they are said at the counter. The row already sits
+    // in the Paid column, so it does not need a sentence around it.
     const howPaid = (p: any) => {
       const acct = String(p.account ?? '').toLowerCase();
-      if (/bank|online|transfer|easypaisa|jazz/.test(acct)) return 'by bank transfer';
-      if (/cash/.test(acct)) return 'in cash';
-      return p.account ? `into ${p.account}` : '';
+      if (/bank|online|transfer|easypaisa|jazz|card/.test(acct)) return 'Online payment';
+      return 'Cash';
     };
 
     type Row = Record<string, unknown>;
@@ -147,7 +148,7 @@ export function PartyDetail({ party, onClose }: { party: PartyRef; onClose: () =
         rows.push({
           _row: 'pay close',
           date: formatDate(pay.date),
-          details: `${isFarmer ? 'You paid' : 'We paid'} ${howPaid(pay)}`.trim(),
+          details: howPaid(pay),
           qty: '',
           rate: '',
           amount: '',
