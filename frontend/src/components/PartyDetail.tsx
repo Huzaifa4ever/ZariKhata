@@ -14,7 +14,7 @@ import { LoadingState, ErrorBanner, EmptyState } from './StatusBits';
 import { IconPrint, IconReceive, IconPayOut } from './icons';
 import { ApiError } from '../api/client';
 import * as api from '../api/resources';
-import { formatMoney, todayIsoDate, describeBalance } from '../lib/format';
+import { formatMoney, formatDate, todayIsoDate, describeBalance } from '../lib/format';
 import { printReport } from './PrintReport';
 import { EditButton } from './EditButton';
 import { DeleteButton } from './DeleteButton';
@@ -59,6 +59,7 @@ export function PartyDetail({ party, onClose }: { party: PartyRef; onClose: () =
   const summary = stmt?.summary;
   const invoices: any[] = (isFarmer ? stmt?.sales : stmt?.purchases) ?? [];
   const payments: any[] = stmt?.payments ?? [];
+  const life: any = stmt?.lifetime;
   const entries: any[] = stmt?.entries ?? [];
   const profile = isFarmer ? stmt?.farmer : stmt?.supplier;
   const owed = Number(summary?.closingBalance ?? 0);
@@ -172,6 +173,32 @@ export function PartyDetail({ party, onClose }: { party: PartyRef; onClose: () =
             </div>
           </div>
 
+          {life && (
+            <div className="lifetime">
+              <div className="lifetime-head">
+                <span>Since {life.firstTrade ? formatDate(life.firstTrade) : 'the start'}</span>
+                {life.lastTrade && <span>last dealt {formatDate(life.lastTrade)}</span>}
+              </div>
+              <div className="lifetime-figures">
+                <div>
+                  <span className="label">{isFarmer ? 'Total bought' : 'Total billed'}</span>
+                  <span className="value">{formatMoney(life.totalInvoiced)}</span>
+                </div>
+                <div>
+                  <span className="label">{isFarmer ? 'Total paid' : 'Total paid by us'}</span>
+                  <span className="value">{formatMoney(life.totalPaid)}</span>
+                </div>
+                <div className="owing">
+                  <span className="label">{isFarmer ? 'Still to clear' : 'Still to pay'}</span>
+                  <span className="value">
+                    {describeBalance(life.balance, isFarmer ? 'receivable' : 'payable').text}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="section-label" style={{ marginTop: 18 }}>In the selected period</div>
           <div className="stat-grid">
             <div className="stat-card">
               <div className="label">Opening</div>
@@ -222,21 +249,7 @@ export function PartyDetail({ party, onClose }: { party: PartyRef; onClose: () =
             />
           )}
 
-          {tab === 'invoices' && (
-            <Table
-              rows={invoices}
-              cols={[
-                ['date', 'Date'],
-                ['invoiceNumber', 'Ref', 'muted'],
-                ['items', 'Items'],
-                ['total', 'Total', 'money'],
-                ['amountPaid', 'Paid', 'money'],
-                ['balance', 'Balance', 'money'],
-                ['status', 'Status'],
-              ]}
-              empty="No invoices yet."
-            />
-          )}
+          {tab === 'invoices' && <InvoiceLines rows={invoices} isFarmer={isFarmer} />}
 
           {tab === 'payments' && (
             <Table
@@ -502,5 +515,89 @@ function PaymentActions({
         invalidate={refresh}
       />
     </>
+  );
+}
+
+
+/* ---------- invoices, with what was actually bought ---------- */
+
+/**
+ * An invoice list that answers the two questions a farmer actually asks at
+ * the counter: what did I buy, and did I pay for it. The old table showed a
+ * bare item count, so "4 items" was all you could learn about a sale - the
+ * product lines were fetched from the server and then thrown away.
+ */
+function InvoiceLines({ rows, isFarmer }: { rows: any[]; isFarmer: boolean }) {
+  const [open, setOpen] = useState<string | null>(rows.length === 1 ? rows[0].invoiceNumber : null);
+  if (rows.length === 0) return <EmptyState label={isFarmer ? 'No invoices yet.' : 'No purchases yet.'} />;
+
+  return (
+    <div className="invoice-lines">
+      {rows.map((inv) => {
+        const expanded = open === inv.invoiceNumber;
+        const tone = inv.settlement === 'Paid in full' ? 'paid' : inv.settlement === 'Part paid' ? 'partial' : 'unpaid';
+        return (
+          <div className={`invoice-block${expanded ? ' open' : ''}`} key={inv.invoiceNumber}>
+            <button
+              type="button"
+              className="invoice-summary"
+              onClick={() => setOpen(expanded ? null : inv.invoiceNumber)}
+              aria-expanded={expanded}
+            >
+              <span className="inv-date">{formatDate(inv.date)}</span>
+              <span className="inv-ref">{inv.invoiceNumber}</span>
+              <span className="inv-count">{inv.lines?.length ?? inv.items} item(s)</span>
+              <span className="inv-total">{formatMoney(inv.total)}</span>
+              <span className={`badge ${tone}`}>{inv.settlement ?? inv.status}</span>
+            </button>
+
+            {expanded && (
+              <div className="invoice-detail">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Product</th>
+                      <th className="text-right">Qty</th>
+                      <th className="text-right">{isFarmer ? 'Price each' : 'Cost each'}</th>
+                      <th className="text-right">Line total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(inv.lines ?? []).map((l: any, i: number) => (
+                      <tr key={i}>
+                        <td>
+                          {l.product}
+                          {l.sku && <div className="cell-muted" style={{ fontSize: 11.5 }}>{l.sku}</div>}
+                        </td>
+                        <td className="text-right">
+                          {l.quantity} {l.unit}
+                        </td>
+                        <td className="text-right">{formatMoney(l.unitPrice)}</td>
+                        <td className="text-right">{formatMoney(l.lineTotal)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                <div className="invoice-foot">
+                  <div className="row-between">
+                    <span>Invoice total</span>
+                    <span>{formatMoney(inv.total)}</span>
+                  </div>
+                  <div className="row-between">
+                    <span>Paid against it</span>
+                    <span>{formatMoney(inv.amountPaid)}</span>
+                  </div>
+                  <div className="row-between" style={{ fontWeight: 600 }}>
+                    <span>{Number(inv.balance) > 0 ? 'Still owing on this invoice' : 'Settled'}</span>
+                    <span>{formatMoney(inv.balance)}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
   );
 }
