@@ -170,14 +170,6 @@ export const adjustAccount = (
   data: { direction: 'IN' | 'OUT'; amount: number; reason: string; date?: string },
 ) => apiRequest(`/api/accounts/${id}/adjust`, { method: 'POST', body: data });
 
-// --- owner password recovery ---
-export const getRecoveryCodeStatus = () =>
-  apiRequest<{ configured: boolean; setAt: string | null }>('/api/auth/recovery-code');
-export const issueRecoveryCode = (password: string) =>
-  apiRequest<{ code: string }>('/api/auth/recovery-code', { method: 'POST', body: { password } });
-export const recoverPassword = (data: { username: string; code: string; newPassword: string }) =>
-  apiRequest<{ ok: true }>('/api/auth/recover', { method: 'POST', body: data });
-
 // --- tasks ---
 export const listTasks = (filters: Record<string, string | number | undefined> = {}) =>
   apiRequest<Task[]>('/api/tasks', { query: filters });

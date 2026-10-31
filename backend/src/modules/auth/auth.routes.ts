@@ -82,6 +82,13 @@ authRouter.get('/me', requireAuth, async (req, res) => {
 });
 
 /* ────────────────────── owner password recovery ──────────────────────
+   NOTE: no longer reachable from the app - the owner asked for the Settings
+   card to be removed, so no code can be created and the login screen no
+   longer offers the flow. The endpoints and the User.recoveryCode* columns
+   are left in place: they are owner-authenticated and inert without a code,
+   and putting the feature back is then a UI change rather than another
+   migration.
+
    There is no email on this system and no second administrator, so a
    forgotten owner password used to mean the books were locked for good. The
    answer is a recovery code the owner generates once and keeps the way they

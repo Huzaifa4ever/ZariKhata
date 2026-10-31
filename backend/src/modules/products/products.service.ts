@@ -86,7 +86,8 @@ export async function getProductDetail(businessId: number, id: number) {
 }
 
 export interface CreateProductInput {
-  sku: string;
+  /** Blank is fine - one is derived from the name. */
+  sku?: string;
   name: string;
   categoryId?: number;
   brand?: string;
@@ -102,17 +103,49 @@ export interface CreateProductInput {
   openingStockBatchNumber?: string;
 }
 
-export async function createProduct(businessId: number, userId: number, input: CreateProductInput) {
-  const existing = await prisma.product.findUnique({
-    where: { businessId_sku: { businessId, sku: input.sku } },
+/**
+ * A product code the shop never has to think about.
+ *
+ * SKU is unique per business because the system needs a stable handle, but
+ * that is the system's problem, not the shopkeeper's: a bottle arriving from
+ * a supplier mid-invoice does not come with a code, and being made to invent
+ * one before the purchase can be saved is pure obstruction. The form said the
+ * code was optional and then the server rejected a blank one.
+ *
+ * Derived from the name, so it still reads as something ("Super Weedkill" ->
+ * SUPERW), with a number appended only when that is already taken.
+ */
+async function deriveSku(businessId: number, name: string): Promise<string> {
+  const base = name.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6) || 'PRD';
+  const taken = await prisma.product.findMany({
+    where: { businessId, sku: { startsWith: base } },
+    select: { sku: true },
   });
-  if (existing) throw AppError.conflict('A product with that SKU already exists');
+  const used = new Set(taken.map((p) => p.sku));
+  if (!used.has(base)) return base;
+  for (let n = 2; n < 10_000; n += 1) {
+    const candidate = `${base}-${n}`;
+    if (!used.has(candidate)) return candidate;
+  }
+  // Astronomically unlikely; a timestamp is still unique and still readable.
+  return `${base}-${Date.now().toString().slice(-6)}`;
+}
+
+export async function createProduct(businessId: number, userId: number, input: CreateProductInput) {
+  const sku = input.sku?.trim() || (await deriveSku(businessId, input.name));
+
+  const existing = await prisma.product.findUnique({
+    where: { businessId_sku: { businessId, sku } },
+  });
+  if (existing) {
+    throw AppError.conflict(`The code "${sku}" is already used by another product. Pick a different one.`);
+  }
 
   const product = await runInTransaction(async (tx) => {
     const created = await tx.product.create({
       data: {
         businessId,
-        sku: input.sku,
+        sku,
         name: input.name,
         categoryId: input.categoryId,
         brand: input.brand,

@@ -209,7 +209,7 @@ function CreateProductModal({ onClose, onCreated }: { onClose: () => void; onCre
   const mutation = useMutation({
     mutationFn: () =>
       api.createProduct({
-        sku: form.sku,
+        sku: form.sku.trim() || undefined,
         name: form.name,
         unit: form.unit,
         sellingPrice: Number(form.sellingPrice || 0),
@@ -237,8 +237,13 @@ function CreateProductModal({ onClose, onCreated }: { onClose: () => void; onCre
       <form onSubmit={onSubmit}>
         <div className="form-grid">
           <div className="field">
-            <label>SKU / Code</label>
-            <input required value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} />
+            <label>Code</label>
+            <input
+              value={form.sku}
+              placeholder="leave blank and one is made for you"
+              onChange={(e) => setForm({ ...form, sku: e.target.value })}
+            />
+            <span className="hint">Only needed if you label your shelves with your own codes.</span>
           </div>
           <div className="field">
             <label>Name</label>

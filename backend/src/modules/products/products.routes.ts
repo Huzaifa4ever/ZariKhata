@@ -47,7 +47,8 @@ const imageDataSchema = z
   .optional();
 
 const createSchema = z.object({
-  sku: z.string().min(1),
+  // Genuinely optional - the service derives one from the name when blank.
+  sku: z.string().optional(),
   name: z.string().min(1),
   categoryId: z.number().int().optional(),
   brand: z.string().optional(),

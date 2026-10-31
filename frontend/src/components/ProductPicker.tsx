@@ -258,7 +258,7 @@ function NewProductInline({
     mutationFn: () =>
       api.createProduct({
         name: form.name.trim(),
-        sku: form.sku.trim(),
+        sku: form.sku.trim() || undefined,
         unit: form.unit.trim() || 'unit',
         sellingPrice: Number(form.sellingPrice || 0),
       }),
@@ -287,7 +287,7 @@ function NewProductInline({
           <span>Code</span>
           <input
             value={form.sku}
-            placeholder="optional"
+            placeholder="made for you if blank"
             onChange={(e) => setForm({ ...form, sku: e.target.value })}
             onKeyDown={(e) => e.key === 'Enter' && e.preventDefault()}
           />
