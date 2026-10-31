@@ -193,10 +193,17 @@ export function DashboardPage() {
             <span>as at {formatDate(todayIsoDate())}</span>
           </div>
           <div className="standing-figures">
-            <div className="standing-figure lead">
+            <div className={`standing-figure lead${Number(data.cashAndBank) < 0 ? ' short' : ''}`}>
               <span className="label">Cash &amp; bank</span>
               <span className="value"><Money value={data.cashAndBank} /></span>
-              <span className="sub">what you can spend today</span>
+              {/* A negative figure here is the books saying money left a
+                  drawer that was already empty. Saying "what you can spend
+                  today" over it is worse than saying nothing. */}
+              <span className="sub">
+                {Number(data.cashAndBank) < 0
+                  ? 'overdrawn - check the cash book on Accounts'
+                  : 'what you can spend today'}
+              </span>
             </div>
             <div className="standing-figure">
               <span className="label">On the shelves</span>

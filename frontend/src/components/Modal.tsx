@@ -10,7 +10,18 @@ import { IconClose } from './icons';
  * often in a hurry, and losing a half-entered invoice to a misplaced click or
  * a stray key is far more costly than reaching for the ×.
  */
-export function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+export function Modal({
+  title,
+  onClose,
+  children,
+  wide = false,
+}: {
+  title: string;
+  onClose: () => void;
+  children: ReactNode;
+  /** For a table that needs the room - a cash book, a statement. */
+  wide?: boolean;
+}) {
   // The backdrop is the scroller while it is open, so let the page behind
   // stay put instead of scrolling away under it.
   useEffect(() => {
@@ -23,7 +34,7 @@ export function Modal({ title, onClose, children }: { title: string; onClose: ()
 
   return (
     <div className="modal-backdrop">
-      <div className="modal" role="dialog" aria-modal="true" aria-label={title}>
+      <div className={`modal${wide ? ' wide' : ''}`} role="dialog" aria-modal="true" aria-label={title}>
         <div className="page-header">
           <h3 style={{ margin: 0 }}>{title}</h3>
           <button className="btn ghost small" onClick={onClose} type="button" aria-label="Close">

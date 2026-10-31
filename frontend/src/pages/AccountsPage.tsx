@@ -4,11 +4,16 @@ import * as api from '../api/resources';
 import { formatMoney } from '../lib/format';
 import { LoadingState, ErrorBanner, EmptyState } from '../components/StatusBits';
 import { Modal } from '../components/Modal';
+import { AccountStatementModal } from '../components/AccountStatementModal';
+import type { Account } from '../api/types';
 
 export function AccountsPage() {
   const qc = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
+  const [viewing, setViewing] = useState<Account | null>(null);
   const { data, isLoading, error } = useQuery({ queryKey: ['accounts'], queryFn: api.listAccounts });
+
+  const short = (data ?? []).filter((a) => Number(a.balance ?? 0) < 0);
 
   return (
     <div>
@@ -19,21 +24,51 @@ export function AccountsPage() {
         </button>
       </div>
 
+      {/* A negative cash balance is not a number, it is a problem. It used to
+          sit in the same white type as a healthy one under the words "what you
+          can spend today". */}
+      {short.length > 0 && (
+        <div className="notice-danger" style={{ marginBottom: 'var(--s-3)' }}>
+          <strong>
+            {short.length === 1
+              ? `${short[0].name} is overdrawn.`
+              : `${short.length} accounts are overdrawn.`}
+          </strong>{' '}
+          More has been paid out than was ever recorded coming in - open the cash book to find the
+          entry that put it there. Usually it is money received that was never entered.
+        </div>
+      )}
+
       {isLoading && <LoadingState />}
       {error && <ErrorBanner message="Could not load accounts." />}
       {data && data.length === 0 && <EmptyState label="No accounts yet." />}
       {data && data.length > 0 && (
         <div className="stat-grid">
-          {data.map((a) => (
-            <div key={a.id} className="stat-card">
-              <div className="label">
-                {a.name} ({a.type})
-              </div>
-              <div className="value">{formatMoney(a.balance)}</div>
-            </div>
-          ))}
+          {data.map((a) => {
+            const balance = Number(a.balance ?? 0);
+            return (
+              <button
+                key={a.id}
+                type="button"
+                className={`stat-card as-button${balance < 0 ? ' danger' : ''}`}
+                onClick={() => setViewing(a)}
+              >
+                <div className="label">
+                  {a.name} ({a.type === 'CASH' ? 'Cash' : 'Bank'})
+                </div>
+                <div className={`value${balance < 0 ? ' amount-negative' : ''}`}>
+                  {formatMoney(a.balance)}
+                </div>
+                <div className="hint">
+                  {balance < 0 ? 'overdrawn - open the cash book' : 'open the cash book'}
+                </div>
+              </button>
+            );
+          })}
         </div>
       )}
+
+      {viewing && <AccountStatementModal account={viewing} onClose={() => setViewing(null)} />}
 
       {showCreate && (
         <CreateAccountModal

@@ -60,6 +60,17 @@ export async function createSale(businessId: number, userId: number, input: Crea
     throw AppError.badRequest('Initial payment cannot exceed the invoice total');
   }
 
+  // A walk-in has no account to owe against. Letting one leave unpaid wrote an
+  // invoice with a balance that no receivables figure anywhere could see - the
+  // Sales list called it UNPAID while the dashboard, the farmer ledger and
+  // every statement reported nothing owing, so the shop quietly under-counted
+  // what it was owed. Credit requires a name to chase.
+  if (!farmer && total.gt(initialPaymentAmount)) {
+    throw AppError.badRequest(
+      'A walk-in customer has no account to carry credit on. Take the full amount, or add the buyer as a farmer first so the balance shows on their khata.',
+    );
+  }
+
   const sale = await runInTransaction(async (tx) => {
     const invoiceNumber = await nextInvoiceNumber(tx, businessId, SequenceType.SALE);
 
@@ -169,6 +180,7 @@ export async function createSale(businessId: number, userId: number, input: Crea
           relatedType: 'FarmerPayment',
           relatedId: payment.id,
           description: `Payment on sale ${invoiceNumber}`,
+          entryDate: created.invoiceDate,
         });
         await recordAccountTransaction(tx, {
           businessId,
@@ -178,6 +190,10 @@ export async function createSale(businessId: number, userId: number, input: Crea
           relatedType: 'FarmerPayment',
           relatedId: payment.id,
           description: `Payment on sale ${invoiceNumber}`,
+          // The cash book follows the invoice, not the clock. Back-date an
+          // invoice to last week and the money has to land in last week, or
+          // that week never reconciles against the drawer.
+          txnDate: created.invoiceDate,
         });
       } else {
         await recordAccountTransaction(tx, {
@@ -188,6 +204,7 @@ export async function createSale(businessId: number, userId: number, input: Crea
           relatedType: 'Sale',
           relatedId: created.id,
           description: `Counter sale ${invoiceNumber}`,
+          txnDate: created.invoiceDate,
         });
       }
 

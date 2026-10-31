@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import * as api from '../api/resources';
 import { formatMoney, formatDate, todayIsoDate } from '../lib/format';
@@ -14,6 +14,7 @@ import { PartyDetail, type PartyRef } from '../components/PartyDetail';
 import { ReceiveOrderModal, outstandingOf } from '../components/ReceiveOrderModal';
 import { DeliveryHistoryModal, DeliveryHistoryButton } from '../components/DeliveryHistory';
 import type { Purchase } from '../api/types';
+import { FilterBar, usePaged, textMatches, withinRange, type DateRange } from '../components/LedgerFilters';
 
 /** "4 of 10 arrived" for the list, without opening the invoice. */
 function arrivalSummary(p: Purchase): string {
@@ -53,8 +54,31 @@ export function PurchasesPage() {
   const [detail, setDetail] = useState<PartyRef | null>(null);
   const [receiving, setReceiving] = useState<Purchase | null>(null);
   const [deliveries, setDeliveries] = useState<Purchase | null>(null);
+  const [search, setSearch] = useState('');
+  const [range, setRange] = useState<DateRange>({ from: '', to: '' });
+  const [status, setStatus] = useState('');
   const qc = useQueryClient();
   const { data, isLoading, error } = useQuery({ queryKey: ['purchases'], queryFn: () => api.listPurchases() });
+
+  const filtered = useMemo(() => {
+    const all = data ?? [];
+    return all.filter((p) => {
+      // "Still to arrive" is the filter the owner reaches for most - it is the
+      // list of orders to chase - so it sits alongside the payment statuses
+      // rather than in a separate control.
+      if (status === 'AWAITING' ? p.arrivalStatus !== 'RECEIVED' : status && p.status !== status) {
+        return false;
+      }
+      if (!withinRange(p.invoiceDate, range)) return false;
+      if (!search.trim()) return true;
+      return textMatches(
+        `${p.invoiceNumber} ${p.supplier?.name ?? ''} ${p.supplierInvoiceNumber ?? ''}`,
+        search,
+      );
+    });
+  }, [data, search, range, status]);
+
+  const { page, pager } = usePaged(filtered);
 
   return (
     <div>
@@ -68,7 +92,35 @@ export function PurchasesPage() {
       {isLoading && <LoadingState />}
       {error && <ErrorBanner message="Could not load purchases." />}
       {data && data.length === 0 && <EmptyState label="No purchases recorded yet." />}
+
       {data && data.length > 0 && (
+        <FilterBar
+          search={search}
+          onSearch={setSearch}
+          searchPlaceholder="Our ref, supplier or their invoice number…"
+          range={range}
+          onRange={setRange}
+          resultCount={filtered.length}
+          totalCount={data.length}
+        >
+          <label className="field inline">
+            <span>Show</span>
+            <select value={status} onChange={(e) => setStatus(e.target.value)}>
+              <option value="">Everything</option>
+              <option value="AWAITING">Still to arrive</option>
+              <option value="UNPAID">Unpaid</option>
+              <option value="PARTIALLY_PAID">Part paid</option>
+              <option value="PAID">Paid</option>
+            </select>
+          </label>
+        </FilterBar>
+      )}
+
+      {data && data.length > 0 && filtered.length === 0 && (
+        <EmptyState label="No purchase matches those filters." />
+      )}
+
+      {data && filtered.length > 0 && (
         <div className="card" style={{ padding: 0, overflowX: 'auto' }}>
           <table className="data-table">
             <thead>
@@ -85,7 +137,7 @@ export function PurchasesPage() {
               </tr>
             </thead>
             <tbody>
-              {data.map((p) => (
+              {page.map((p) => (
                 <tr key={p.id}>
                   <td>
                     <button
@@ -136,6 +188,8 @@ export function PurchasesPage() {
           </table>
         </div>
       )}
+
+      {pager}
 
       {detail && <PartyDetail party={detail} onClose={() => setDetail(null)} />}
 

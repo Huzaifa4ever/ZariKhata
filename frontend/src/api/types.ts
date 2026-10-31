@@ -170,6 +170,23 @@ export interface Account {
   isActive: boolean;
 }
 
+/** One line of the cash book, with the balance as it stood after it. */
+export interface AccountTransaction {
+  id: number;
+  txnDate: string;
+  direction: 'CREDIT' | 'DEBIT';
+  amount: string;
+  description?: string | null;
+  relatedType: string;
+  relatedId: number;
+  runningBalance: string;
+}
+
+export interface AccountStatement {
+  account: Account & { balance: string };
+  transactions: AccountTransaction[];
+}
+
 export interface ExpenseCategory {
   id: number;
   name: string;

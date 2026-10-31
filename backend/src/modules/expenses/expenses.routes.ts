@@ -4,7 +4,7 @@ import { LedgerDirection } from '@prisma/client';
 import { prisma } from '../../db/prisma';
 import { requireAuth } from '../../middleware/auth';
 import { runInTransaction } from '../../lib/db';
-import { recordAccountTransaction } from '../../lib/accountLedger';
+import { assertSufficientFunds, recordAccountTransaction } from '../../lib/accountLedger';
 import { writeAuditLog } from '../../lib/audit';
 import { AppError } from '../../lib/errors';
 import { parseBusinessDate, parseBusinessDateEnd } from '../../lib/dates';
@@ -124,6 +124,7 @@ expenseRouter.post('/', async (req, res, next) => {
           deductFromSalary: forUser.deductFromSalary,
         },
       });
+      await assertSufficientFunds(tx, data.accountId, data.amount, 'expense');
       await recordAccountTransaction(tx, {
         businessId: req.businessId!,
         accountId: data.accountId,
@@ -132,6 +133,9 @@ expenseRouter.post('/', async (req, res, next) => {
         relatedType: 'Expense',
         relatedId: created.id,
         description: data.description ?? category.name,
+        // The drawer is lighter on the day the money was spent, not on the
+        // day someone got round to typing it in.
+        txnDate: created.expenseDate,
       });
       await writeAuditLog(tx, {
         businessId: req.businessId!,

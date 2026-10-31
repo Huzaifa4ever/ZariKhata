@@ -2,7 +2,7 @@ import { DocumentStatus, LedgerDirection, PartyType, Prisma, PaymentMethod } fro
 import { prisma } from '../../db/prisma';
 import { runInTransaction } from '../../lib/db';
 import { recordLedgerEntry } from '../../lib/ledger';
-import { recordAccountTransaction } from '../../lib/accountLedger';
+import { assertSufficientFunds, recordAccountTransaction } from '../../lib/accountLedger';
 import { allocateOldestFirst } from '../../lib/paymentAllocation';
 import { deriveStatusFromBalance } from '../../lib/invoiceStatus';
 import { writeAuditLog } from '../../lib/audit';
@@ -107,6 +107,7 @@ export async function recordSupplierPayment(businessId: number, userId: number, 
         description: input.notes ?? 'Payment made to supplier',
       });
 
+      await assertSufficientFunds(tx, input.accountId, amount, 'payment');
       await recordAccountTransaction(tx, {
         businessId,
         accountId: input.accountId,
@@ -115,6 +116,7 @@ export async function recordSupplierPayment(businessId: number, userId: number, 
         relatedType: 'SupplierPayment',
         relatedId: created.id,
         description: `Payment to ${supplier.name}`,
+        txnDate: created.paymentDate,
       });
 
       await writeAuditLog(tx, {

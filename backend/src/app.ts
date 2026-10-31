@@ -56,6 +56,19 @@ export function createApp() {
     message: { error: 'Too many login attempts. Please wait a few minutes and try again.' },
   });
   app.use('/api/auth/login', loginLimiter);
+  // Recovery is the one path that bypasses the password, so it is held to a
+  // tighter budget than login: a code is typed from a slip of paper once, not
+  // ten times.
+  app.use(
+    '/api/auth/recover',
+    rateLimit({
+      windowMs: 60 * 60 * 1000,
+      limit: 5,
+      standardHeaders: true,
+      legacyHeaders: false,
+      message: { error: 'Too many recovery attempts. Please wait an hour and try again.' },
+    }),
+  );
 
   // A general ceiling on every other API route, generous enough for normal
   // invoice-entry use but enough to blunt an automated hammering of the API.

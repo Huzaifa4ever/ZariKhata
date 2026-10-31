@@ -116,6 +116,7 @@ export async function recordFarmerPayment(businessId: number, userId: number, in
         relatedType: 'FarmerPayment',
         relatedId: created.id,
         description: `Payment from ${farmer.name}`,
+        txnDate: created.paymentDate,
       });
 
       await writeAuditLog(tx, {

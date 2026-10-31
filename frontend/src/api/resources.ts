@@ -1,6 +1,7 @@
 import { apiRequest } from './client';
 import type {
   Account,
+  AccountStatement,
   Business,
   DashboardSnapshot,
   Expense,
@@ -163,7 +164,7 @@ export const listAccounts = () => apiRequest<Account[]>('/api/accounts');
 export const createAccount = (data: { name: string; type: string; openingBalance?: number }) =>
   apiRequest<Account>('/api/accounts', { method: 'POST', body: data });
 export const getAccountStatement = (id: number, params: { from?: string; to?: string } = {}) =>
-  apiRequest(`/api/accounts/${id}/statement`, { query: params });
+  apiRequest<AccountStatement>(`/api/reports/account-statement/${id}`, { query: params });
 
 // --- tasks ---
 export const listTasks = (filters: Record<string, string | number | undefined> = {}) =>

@@ -31,6 +31,17 @@ export function setToken(token: string | null): void {
   }
 }
 
+/**
+ * Broadcast when the server rejects our token.
+ *
+ * A session can die mid-shift - it expires after 12 hours, or the owner
+ * deactivates the user from another machine. Without this, every screen just
+ * says "could not load" and every save fails, and the only way out is for the
+ * shopkeeper to guess that reloading might help. AuthContext listens and
+ * drops straight to the login screen instead.
+ */
+export const SESSION_EXPIRED_EVENT = 'zarikhata:session-expired';
+
 export class ApiError extends Error {
   status: number;
   details?: unknown;
@@ -60,17 +71,52 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   const token = getToken();
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  const res = await fetch(url.toString(), {
-    method,
-    headers,
-    body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
-  });
+  let res: Response;
+  try {
+    res = await fetch(url.toString(), {
+      method,
+      headers,
+      body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+    });
+  } catch {
+    // fetch only rejects for network-level failures - no internet, DNS, CORS.
+    throw new ApiError(0, 'No connection to the server. Check the internet and try again.');
+  }
 
   const text = await res.text();
-  const data = text ? JSON.parse(text) : undefined;
+
+  // Not every response is ours. A gateway timeout, a cold start or a proxy
+  // error comes back as an HTML page, and parsing that blind used to put
+  // `Unexpected token '<'` in front of the shopkeeper mid-sale.
+  let data: any;
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      if (res.ok) throw new ApiError(res.status, 'The server sent back something unreadable. Please try again.');
+      data = undefined;
+    }
+  }
 
   if (!res.ok) {
-    throw new ApiError(res.status, data?.error ?? `Request failed (${res.status})`, data?.details);
+    if (res.status === 401 && !path.includes('/auth/login')) {
+      setToken(null);
+      window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT));
+    }
+    throw new ApiError(res.status, data?.error ?? messageForStatus(res.status), data?.details);
   }
   return data as T;
+}
+
+/** Plain language for the errors that arrive with no JSON body of their own. */
+function messageForStatus(status: number): string {
+  if (status === 401) return 'Your session has ended. Please sign in again.';
+  if (status === 403) return 'You do not have permission to do that.';
+  if (status === 404) return 'That record no longer exists.';
+  if (status === 429) return 'Too many attempts. Wait a moment and try again.';
+  if (status === 502 || status === 503 || status === 504) {
+    return 'Cannot reach the server right now. Check the internet connection and try again.';
+  }
+  if (status >= 500) return 'The server hit a problem. Nothing was saved - please try again.';
+  return `Request failed (${status})`;
 }

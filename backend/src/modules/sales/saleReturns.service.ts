@@ -3,7 +3,7 @@ import { prisma } from '../../db/prisma';
 import { runInTransaction } from '../../lib/db';
 import { recordStockMovement } from '../../lib/stock';
 import { recordLedgerEntry } from '../../lib/ledger';
-import { recordAccountTransaction } from '../../lib/accountLedger';
+import { assertSufficientFunds, recordAccountTransaction } from '../../lib/accountLedger';
 import { nextInvoiceNumber } from '../../lib/invoiceNumber';
 import { writeAuditLog } from '../../lib/audit';
 import { AppError } from '../../lib/errors';
@@ -123,6 +123,7 @@ export async function createSaleReturn(businessId: number, userId: number, input
     if (input.cashRefundAccountId) {
       const account = await tx.account.findFirst({ where: { id: input.cashRefundAccountId, businessId } });
       if (!account) throw AppError.notFound('Account not found');
+      await assertSufficientFunds(tx, input.cashRefundAccountId, totalAmount, 'refund');
       await recordAccountTransaction(tx, {
         businessId,
         accountId: input.cashRefundAccountId,
@@ -131,6 +132,7 @@ export async function createSaleReturn(businessId: number, userId: number, input
         relatedType: 'SaleReturn',
         relatedId: saleReturn.id,
         description: `Cash refund for return ${returnNumber}`,
+        txnDate: saleReturn.returnDate,
       });
     }
 

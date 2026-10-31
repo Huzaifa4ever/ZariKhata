@@ -13,6 +13,7 @@ import { PrintInvoiceButton } from '../components/PrintInvoiceButton';
 import { PartyDetail, type PartyRef } from '../components/PartyDetail';
 import { SaleReturnModal } from '../components/SaleReturnModal';
 import { InvoiceDetailModal } from '../components/InvoiceDetailModal';
+import { FilterBar, usePaged, textMatches, withinRange, type DateRange } from '../components/LedgerFilters';
 
 interface LineItem {
   productId: number | '';
@@ -26,8 +27,28 @@ export function SalesPage() {
   const [detail, setDetail] = useState<PartyRef | null>(null);
   const [returning, setReturning] = useState<number | null>(null);
   const [invoiceFor, setInvoiceFor] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const [range, setRange] = useState<DateRange>({ from: '', to: '' });
+  const [status, setStatus] = useState('');
   const qc = useQueryClient();
   const { data, isLoading, error } = useQuery({ queryKey: ['sales'], queryFn: () => api.listSales() });
+
+  const filtered = useMemo(() => {
+    const all = data ?? [];
+    return all.filter((s) => {
+      if (status && s.status !== status) return false;
+      if (!withinRange(s.invoiceDate, range)) return false;
+      if (!search.trim()) return true;
+      // Invoice number, farmer, or the name written on a counter sale -
+      // whichever the shopkeeper happens to remember.
+      return textMatches(
+        `${s.invoiceNumber} ${s.farmer?.name ?? ''} ${s.customerName ?? ''}`,
+        search,
+      );
+    });
+  }, [data, search, range, status]);
+
+  const { page, pager } = usePaged(filtered);
 
   return (
     <div>
@@ -41,7 +62,34 @@ export function SalesPage() {
       {isLoading && <LoadingState />}
       {error && <ErrorBanner message="Could not load sales." />}
       {data && data.length === 0 && <EmptyState label="No sales recorded yet." />}
+
       {data && data.length > 0 && (
+        <FilterBar
+          search={search}
+          onSearch={setSearch}
+          searchPlaceholder="Invoice number, farmer or customer name…"
+          range={range}
+          onRange={setRange}
+          resultCount={filtered.length}
+          totalCount={data.length}
+        >
+          <label className="field inline">
+            <span>Status</span>
+            <select value={status} onChange={(e) => setStatus(e.target.value)}>
+              <option value="">Any</option>
+              <option value="UNPAID">Unpaid</option>
+              <option value="PARTIALLY_PAID">Part paid</option>
+              <option value="PAID">Paid</option>
+            </select>
+          </label>
+        </FilterBar>
+      )}
+
+      {data && data.length > 0 && filtered.length === 0 && (
+        <EmptyState label="No sale matches those filters." />
+      )}
+
+      {data && filtered.length > 0 && (
         <div className="card" style={{ padding: 0, overflowX: 'auto' }}>
           <table className="data-table">
             <thead>
@@ -57,7 +105,7 @@ export function SalesPage() {
               </tr>
             </thead>
             <tbody>
-              {data.map((s) => (
+              {page.map((s) => (
                 <tr key={s.id}>
                   <td>
                     {s.farmer ? (
@@ -114,6 +162,8 @@ export function SalesPage() {
           </table>
         </div>
       )}
+
+      {pager}
 
       {detail && <PartyDetail party={detail} onClose={() => setDetail(null)} />}
 

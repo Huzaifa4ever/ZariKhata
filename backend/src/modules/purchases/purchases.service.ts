@@ -12,7 +12,7 @@ import { prisma } from '../../db/prisma';
 import { runInTransaction } from '../../lib/db';
 import { recordStockMovement } from '../../lib/stock';
 import { recordLedgerEntry } from '../../lib/ledger';
-import { recordAccountTransaction } from '../../lib/accountLedger';
+import { assertSufficientFunds, recordAccountTransaction } from '../../lib/accountLedger';
 import { nextInvoiceNumber } from '../../lib/invoiceNumber';
 import { writeAuditLog } from '../../lib/audit';
 import { AppError } from '../../lib/errors';
@@ -244,8 +244,10 @@ export async function createPurchase(businessId: number, userId: number, input: 
         relatedType: 'SupplierPayment',
         relatedId: payment.id,
         description: `Payment on purchase ${invoiceNumber}`,
+        entryDate: created.invoiceDate,
       });
 
+      await assertSufficientFunds(tx, input.initialPayment.accountId, initialPaymentAmount, 'payment');
       await recordAccountTransaction(tx, {
         businessId,
         accountId: input.initialPayment.accountId,
@@ -254,6 +256,8 @@ export async function createPurchase(businessId: number, userId: number, input: 
         relatedType: 'SupplierPayment',
         relatedId: payment.id,
         description: `Payment on purchase ${invoiceNumber}`,
+        // Cash follows the invoice date, not the moment of data entry.
+        txnDate: created.invoiceDate,
       });
     }
 

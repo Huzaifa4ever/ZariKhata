@@ -3931,3 +3931,131 @@ select option {
    the same two meanings they carry everywhere else. */
 .batch-warn { color: var(--warning-text); }
 .batch-danger { color: var(--danger-text); }
+
+/* ─────────────────────── filter bars ───────────────────────
+   Sales, Purchases and Expenses all grew the same row of controls: a search
+   box, a date range, a status picker. One set of rules so they look like one
+   system, and so they stack rather than overflow on a phone. */
+
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--s-2);
+  margin-bottom: var(--s-3);
+}
+
+.filter-bar .field {
+  margin: 0;
+}
+
+.filter-bar .field.inline {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.filter-bar .field.inline > span {
+  font-size: var(--t-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-3);
+  font-weight: 600;
+}
+
+.filter-bar .field.grow {
+  flex: 1 1 220px;
+}
+
+.filter-bar input,
+.filter-bar select {
+  height: 38px;
+}
+
+.filter-bar .filter-count {
+  margin-inline-start: auto;
+  font-size: var(--t-micro);
+  color: var(--text-3);
+  padding-bottom: 10px;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .filter-bar .field.inline {
+    flex: 1 1 140px;
+  }
+  .filter-bar .filter-count {
+    margin-inline-start: 0;
+    width: 100%;
+    padding-bottom: 0;
+  }
+}
+
+/* Money that has gone the wrong way. Red is reserved for this - a negative
+   balance is not a styling flourish, it is the shop being short. */
+.amount-negative {
+  color: var(--danger);
+  font-variant-numeric: tabular-nums;
+}
+
+.modal.wide {
+  max-width: 1040px;
+}
+
+/* A page of rows the shopkeeper is walking back through. */
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2);
+  margin-top: var(--s-3);
+  flex-wrap: wrap;
+}
+
+.pager .pager-status {
+  font-size: var(--t-micro);
+  color: var(--text-3);
+}
+
+.pager .pager-buttons {
+  display: flex;
+  gap: var(--s-1);
+}
+
+/* A stat card you can press. Same card, plus the affordances a button needs:
+   a pointer, a focus ring, and something happening on hover. */
+.stat-card.as-button {
+  text-align: start;
+  font: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s var(--ease), transform 0.15s var(--ease);
+}
+
+.stat-card.as-button:hover {
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+
+.stat-card.as-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* A standing warning about the state of the books - not an error from an
+   action the user just took, which is what .error-banner is for. */
+.notice-danger {
+  border: 1px solid var(--danger);
+  background: var(--danger-soft);
+  color: var(--danger-text);
+  border-radius: var(--r-lg);
+  padding: 12px 14px;
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+
+/* The one place on the dashboard that is allowed to turn red. */
+.standing-figure.short .value,
+.standing-figure.short .sub {
+  color: var(--danger-text);
+}

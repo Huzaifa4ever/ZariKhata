@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import * as api from '../api/resources';
 import { formatMoney, formatDate, todayIsoDate } from '../lib/format';
@@ -7,6 +7,7 @@ import type { Account, Expense } from '../api/types';
 import { DeleteButton } from '../components/DeleteButton';
 import { EditButton } from '../components/EditButton';
 import { useAuth } from '../auth/AuthContext';
+import { FilterBar, usePaged, textMatches, withinRange, type DateRange } from '../components/LedgerFilters';
 
 /**
  * Every expense is booked against a person - the owner, or a named employee -
@@ -25,6 +26,26 @@ export function ExpensesPage() {
   const { data: categories } = useQuery({ queryKey: ['expense-categories'], queryFn: api.listExpenseCategories });
   const { data: accounts } = useQuery({ queryKey: ['accounts'], queryFn: api.listAccounts });
   const { data: expenses, isLoading, error } = useQuery({ queryKey: ['expenses'], queryFn: () => api.listExpenses() });
+
+  const [search, setSearch] = useState('');
+  const [range, setRange] = useState<DateRange>({ from: '', to: '' });
+  const [filterCategory, setFilterCategory] = useState('');
+
+  const filtered = useMemo(() => {
+    const all = (expenses ?? []) as Expense[];
+    return all.filter((e) => {
+      if (filterCategory && String(e.categoryId) !== filterCategory) return false;
+      if (!withinRange(e.expenseDate, range)) return false;
+      if (!search.trim()) return true;
+      return textMatches(
+        `${e.category?.name ?? ''} ${e.account?.name ?? ''} ${e.description ?? ''} ${e.forUser?.name ?? ''}`,
+        search,
+      );
+    });
+  }, [expenses, search, range, filterCategory]);
+
+  const { page, pager } = usePaged(filtered);
+  const filteredTotal = filtered.reduce((sum, e) => sum + Number(e.amount), 0);
 
   const [categoryId, setCategoryId] = useState<number | ''>('');
   const [accountId, setAccountId] = useState<number | ''>('');
@@ -192,7 +213,45 @@ export function ExpensesPage() {
       {isLoading && <LoadingState />}
       {error && <ErrorBanner message="Could not load expenses." />}
       {expenses && expenses.length === 0 && <EmptyState label="No expenses recorded yet." />}
+
       {expenses && expenses.length > 0 && (
+        <FilterBar
+          search={search}
+          onSearch={setSearch}
+          searchPlaceholder="Category, account, note or person…"
+          range={range}
+          onRange={setRange}
+          resultCount={filtered.length}
+          totalCount={expenses.length}
+        >
+          <label className="field inline">
+            <span>Category</span>
+            <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)}>
+              <option value="">Any</option>
+              {(categories ?? []).map((c) => (
+                <option key={c.id} value={String(c.id)}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        </FilterBar>
+      )}
+
+      {/* The total for what is on screen, not for the page - the reason the
+          filtering is done in the browser rather than with a LIMIT. */}
+      {expenses && expenses.length > 0 && filtered.length > 0 && (
+        <p className="muted-3" style={{ fontSize: 12.5, marginTop: -4, marginBottom: 10 }}>
+          {filtered.length === expenses.length ? 'All expenses' : 'Matching expenses'} come to{' '}
+          <strong>{formatMoney(filteredTotal)}</strong>.
+        </p>
+      )}
+
+      {expenses && expenses.length > 0 && filtered.length === 0 && (
+        <EmptyState label="No expense matches those filters." />
+      )}
+
+      {expenses && filtered.length > 0 && (
         <div className="card" style={{ padding: 0, overflowX: 'auto' }}>
           <table className="data-table">
             <thead>
@@ -207,7 +266,7 @@ export function ExpensesPage() {
               </tr>
             </thead>
             <tbody>
-              {(expenses as Expense[]).map((e) => (
+              {page.map((e) => (
                 <tr key={e.id}>
                   <td>{formatDate(e.expenseDate)}</td>
                   <td>{e.category?.name}</td>
@@ -301,6 +360,8 @@ export function ExpensesPage() {
           </table>
         </div>
       )}
+
+      {pager}
     </div>
   );
 }
