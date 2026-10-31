@@ -91,3 +91,60 @@ accountRouter.get('/:id/statement', async (req, res, next) => {
     next(err);
   }
 });
+
+/**
+ * Put the recorded balance back in step with the drawer.
+ *
+ * A shop that starts keeping books mid-stream has a cash balance that is
+ * simply wrong: the takings from before the system existed were never
+ * entered, so the account reads zero while the drawer holds real money. There
+ * was no way to say so, which made every cash payment look like it was
+ * overdrawing an empty account.
+ *
+ * This is a plain entry in the cash book like any other - it is not a silent
+ * edit of the balance, and it carries a reason, so the correction is as
+ * visible a year later as the thing it corrected.
+ */
+const adjustSchema = z.object({
+  direction: z.enum(['IN', 'OUT']),
+  amount: z.number().positive(),
+  reason: z.string().min(1, 'Say what this adjustment is for.'),
+  date: z.string().optional(),
+});
+
+accountRouter.post('/:id/adjust', requireRole('OWNER'), async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const data = adjustSchema.parse(req.body);
+    const account = await prisma.account.findFirst({ where: { id, businessId: req.businessId! } });
+    if (!account) throw AppError.notFound('Account not found');
+
+    const txn = await prisma.accountTransaction.create({
+      data: {
+        businessId: req.businessId!,
+        accountId: id,
+        direction: data.direction === 'IN' ? 'CREDIT' : 'DEBIT',
+        amount: new Decimal(data.amount).toString(),
+        relatedType: 'Adjustment',
+        // No document behind an adjustment - the audit log is the record.
+        relatedId: 0,
+        description: data.reason.trim(),
+        txnDate: data.date ? parseBusinessDate(data.date) : new Date(),
+      },
+    });
+
+    await writeAuditLog(prisma, {
+      businessId: req.businessId!,
+      userId: req.user!.id,
+      action: 'ADJUST',
+      entityType: 'Account',
+      entityId: id,
+      afterData: { direction: data.direction, amount: data.amount, reason: data.reason },
+      ipAddress: req.ip,
+    });
+
+    res.status(201).json(txn);
+  } catch (err) {
+    next(err);
+  }
+});

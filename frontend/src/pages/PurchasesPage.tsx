@@ -433,6 +433,7 @@ function NewPurchaseModal({ onClose, onCreated }: { onClose: () => void; onCreat
           onAccountChange={setAccountId}
           accounts={accounts}
           partyLabel="You pay the supplier"
+          direction="out"
         />
 
         <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>

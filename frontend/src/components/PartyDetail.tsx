@@ -10,6 +10,7 @@
 import { useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Modal } from './Modal';
+import { AccountBalanceNote } from './AccountBalanceNote';
 import { LoadingState, ErrorBanner, EmptyState } from './StatusBits';
 import { IconPrint, IconReceive, IconPayOut } from './icons';
 import { ApiError } from '../api/client';
@@ -481,6 +482,11 @@ function PartyPaymentForm({ party, owed, onClose }: { party: PartyRef; owed: num
               <option value="">Choose...</option>
               {accounts?.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
             </select>
+            <AccountBalanceNote
+              account={accounts?.find((a) => a.id === accountId)}
+              amount={entered}
+              direction={isFarmer ? 'in' : 'out'}
+            />
           </div>
           <div className="field">
             <label htmlFor="pd-date">Date</label>

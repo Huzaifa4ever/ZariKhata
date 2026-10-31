@@ -4171,3 +4171,21 @@ select option {
   background: var(--danger);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 22%, transparent);
 }
+
+/* What an account holds, under the field that spends from it. Informational
+   by default; a warning when the payment would take it below zero - never a
+   blocker, because the money has usually already moved. */
+.balance-note {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-3);
+}
+
+.balance-note.warn {
+  color: var(--danger-text);
+  background: var(--danger-soft);
+  border: 1px solid var(--danger);
+  border-radius: var(--r-md);
+  padding: 8px 10px;
+}

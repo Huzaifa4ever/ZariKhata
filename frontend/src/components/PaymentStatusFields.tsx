@@ -1,4 +1,5 @@
 import { formatMoney } from '../lib/format';
+import { AccountBalanceNote } from './AccountBalanceNote';
 import type { Account } from '../api/types';
 
 export type PayStatus = 'UNPAID' | 'PARTIAL' | 'PAID';
@@ -22,6 +23,7 @@ export function PaymentStatusFields({
   onAccountChange,
   accounts,
   partyLabel,
+  direction = 'in',
 }: {
   total: number;
   status: PayStatus;
@@ -33,6 +35,8 @@ export function PaymentStatusFields({
   accounts: Account[] | undefined;
   /** "Farmer pays" vs "You pay" wording. */
   partyLabel: string;
+  /** 'in' on a sale (money arrives), 'out' on a purchase (money leaves). */
+  direction?: 'in' | 'out';
 }) {
   const paidNow = status === 'PAID' ? total : status === 'PARTIAL' ? Number(amount || 0) : 0;
   const remaining = Math.max(0, total - paidNow);
@@ -78,7 +82,7 @@ export function PaymentStatusFields({
             />
           </div>
           <div className="field">
-            <label htmlFor="pay-account">Into account</label>
+            <label htmlFor="pay-account">{direction === 'out' ? 'Paid from' : 'Into account'}</label>
             <select
               id="pay-account"
               value={accountId}
@@ -92,6 +96,11 @@ export function PaymentStatusFields({
                 </option>
               ))}
             </select>
+            <AccountBalanceNote
+              account={(accounts ?? []).find((a) => a.id === accountId)}
+              amount={paidNow}
+              direction={direction}
+            />
           </div>
         </div>
       )}

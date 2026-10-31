@@ -1,6 +1,5 @@
 import { Prisma, LedgerDirection } from '@prisma/client';
 import type { Tx } from '../db/prisma';
-import { AppError } from './errors';
 const Decimal = Prisma.Decimal;
 type DecimalInput = string | number | Prisma.Decimal;
 
@@ -35,37 +34,29 @@ export async function recordAccountTransaction(
 }
 
 /**
- * Refuse to pay out more than the account actually holds.
+ * Whether paying this much out of this account would overdraw it.
  *
- * A cash drawer cannot go negative in the real world - if the books say it
- * did, something was recorded wrong, and the longer that sits the harder it is
- * to find. Until now getAccountBalance was only ever read for display, so the
- * shop could quietly run to minus four thousand rupees with no warning
- * anywhere.
+ * Deliberately a question, not a rule. An earlier version of this threw and
+ * blocked the payment, which was wrong: the books lag reality in a shop that
+ * has just started keeping them, so a cash account reading zero usually means
+ * the takings were never entered, not that the drawer is empty. Refusing the
+ * payment does not make the money appear - it just stops the shopkeeper
+ * recording something that genuinely happened, and the real event ends up
+ * nowhere.
  *
- * Blocked for cash, allowed for bank: a bank account legitimately goes
- * overdrawn, and a cheque written against a pending deposit is ordinary
- * business. Refusing that would just teach the owner to lie about the
- * account.
+ * So the figure is reported and never enforced. The UI warns before saving,
+ * the dashboard shows a negative balance in red, and the cash book on the
+ * Accounts page exists to find whatever is missing - but the person at the
+ * counter is the one who knows what is in the drawer.
  */
-export async function assertSufficientFunds(
+export async function wouldOverdraw(
   tx: Tx,
   accountId: number,
   amount: DecimalInput,
-  what: string,
-): Promise<void> {
-  const account = await tx.account.findUniqueOrThrow({ where: { id: accountId } });
-  if (account.type !== 'CASH') return;
-
+): Promise<{ overdrawn: boolean; balance: Prisma.Decimal; shortBy: Prisma.Decimal }> {
   const balance = await getAccountBalance(tx, accountId);
-  const requested = new Decimal(amount.toString());
-  if (requested.lte(balance)) return;
-
-  const short = requested.minus(balance);
-  throw AppError.badRequest(
-    `${account.name} holds Rs ${balance.toFixed(2)}, which is Rs ${short.toFixed(2)} short of this ${what}. ` +
-      'Record the money coming in first, or pay from another account.',
-  );
+  const shortBy = new Decimal(amount.toString()).minus(balance);
+  return { overdrawn: shortBy.gt(0), balance, shortBy };
 }
 
 export async function getAccountBalance(tx: Tx, accountId: number): Promise<Prisma.Decimal> {

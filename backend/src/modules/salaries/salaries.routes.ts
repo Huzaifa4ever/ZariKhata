@@ -15,7 +15,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../../db/prisma';
 import { requireAuth, requireRole } from '../../middleware/auth';
 import { runInTransaction } from '../../lib/db';
-import { assertSufficientFunds, recordAccountTransaction } from '../../lib/accountLedger';
+import { recordAccountTransaction } from '../../lib/accountLedger';
 import { writeAuditLog } from '../../lib/audit';
 import { parseBusinessDate, formatBusinessDate } from '../../lib/dates';
 import { AppError } from '../../lib/errors';
@@ -258,7 +258,6 @@ salaryRouter.post('/pay', async (req, res, next) => {
       });
 
       // Only the net leaves the account now - the advance already did.
-      await assertSufficientFunds(tx, data.accountId, data.amount, 'salary payment');
       await recordAccountTransaction(tx, {
         businessId,
         accountId: data.accountId,
@@ -437,7 +436,6 @@ salaryRouter.post('/advance', async (req, res, next) => {
         },
       });
 
-      await assertSufficientFunds(tx, data.accountId, data.amount, 'advance');
       await recordAccountTransaction(tx, {
         businessId,
         accountId: data.accountId,

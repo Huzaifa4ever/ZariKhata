@@ -7,6 +7,7 @@ import type { Account, Expense } from '../api/types';
 import { DeleteButton } from '../components/DeleteButton';
 import { EditButton } from '../components/EditButton';
 import { useAuth } from '../auth/AuthContext';
+import { AccountBalanceNote } from '../components/AccountBalanceNote';
 import { FilterBar, usePaged, textMatches, withinRange, type DateRange } from '../components/LedgerFilters';
 
 /**
@@ -137,6 +138,11 @@ export function ExpensesPage() {
                   </option>
                 ))}
               </select>
+              <AccountBalanceNote
+                account={(accounts ?? []).find((a: Account) => a.id === accountId)}
+                amount={Number(amount || 0)}
+                direction="out"
+              />
             </div>
             <div className="field">
               <label htmlFor="exp-for">Spent on</label>

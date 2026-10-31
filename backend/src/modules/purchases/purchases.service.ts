@@ -12,7 +12,7 @@ import { prisma } from '../../db/prisma';
 import { runInTransaction } from '../../lib/db';
 import { recordStockMovement } from '../../lib/stock';
 import { recordLedgerEntry } from '../../lib/ledger';
-import { assertSufficientFunds, recordAccountTransaction } from '../../lib/accountLedger';
+import { recordAccountTransaction } from '../../lib/accountLedger';
 import { nextInvoiceNumber } from '../../lib/invoiceNumber';
 import { writeAuditLog } from '../../lib/audit';
 import { AppError } from '../../lib/errors';
@@ -247,7 +247,6 @@ export async function createPurchase(businessId: number, userId: number, input: 
         entryDate: created.invoiceDate,
       });
 
-      await assertSufficientFunds(tx, input.initialPayment.accountId, initialPaymentAmount, 'payment');
       await recordAccountTransaction(tx, {
         businessId,
         accountId: input.initialPayment.accountId,

@@ -164,7 +164,11 @@ export const listAccounts = () => apiRequest<Account[]>('/api/accounts');
 export const createAccount = (data: { name: string; type: string; openingBalance?: number }) =>
   apiRequest<Account>('/api/accounts', { method: 'POST', body: data });
 export const getAccountStatement = (id: number, params: { from?: string; to?: string } = {}) =>
-  apiRequest<AccountStatement>(`/api/reports/account-statement/${id}`, { query: params });
+  apiRequest<AccountStatement>(`/api/accounts/${id}/statement`, { query: params });
+export const adjustAccount = (
+  id: number,
+  data: { direction: 'IN' | 'OUT'; amount: number; reason: string; date?: string },
+) => apiRequest(`/api/accounts/${id}/adjust`, { method: 'POST', body: data });
 
 // --- owner password recovery ---
 export const getRecoveryCodeStatus = () =>
