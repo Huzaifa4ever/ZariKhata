@@ -85,8 +85,8 @@ export function FarmersPage() {
                       resource="farmers"
                       id={f.id}
                       label={f.name}
-                      description="Only possible while they have no invoices or payments - otherwise mark them inactive instead."
-                      invalidate={['farmers']}
+                      description="Their invoices, returns and payments go with them, and the stock those invoices sold goes back on the shelf."
+                      invalidate={['farmers', 'sales', 'products', 'accounts', 'reports']}
                     />
                     </div>
                   </td>

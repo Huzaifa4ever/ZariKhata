@@ -77,8 +77,8 @@ export function SuppliersPage() {
                       resource="suppliers"
                       id={s.id}
                       label={s.name}
-                      description="Only possible while they have no purchases or payments - otherwise mark them inactive instead."
-                      invalidate={['suppliers']}
+                      description="Their purchases, deliveries, returns and payments go with them, and the stock those purchases brought in comes back off the shelf."
+                      invalidate={['suppliers', 'purchases', 'products', 'accounts', 'reports']}
                     />
                     </div>
                   </td>

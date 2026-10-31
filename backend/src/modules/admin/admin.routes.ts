@@ -1045,9 +1045,60 @@ adminRouter.delete('/purchase-receipts/:id', async (req, res, next) => {
 });
 
 /* ──────────────────── parties and products ────────────────────
-   These are only removable while nothing references them. Once a farmer has
-   an invoice against their name, deleting them would orphan that history —
-   deactivating is the right move, and the error says so. */
+   Admin mode deletes a party outright, taking their whole paper trail with
+   them: payments, returns, deliveries and invoices. Refusing because history
+   exists was the wrong call - the owner reaches for this precisely when a
+   party was entered by mistake and they want every trace of it gone. The
+   books stay square because each document is unwound through the same
+   helpers a single delete uses, so ledger entries, cash movements and batch
+   counters all come back to where they started.
+
+   One thing is still refused, and it is not stubbornness: stock bought from a
+   supplier that has since been sold to a farmer. Deleting that purchase would
+   delete the batch the farmer's invoice was costed against, leaving a sale
+   priced from goods that never existed. That belongs to someone else's
+   history, not the supplier's. */
+
+/** Strip one sale back out of the books, returns and all. */
+async function purgeSale(tx: Tx, businessId: number, saleId: number) {
+  const returns = await tx.saleReturn.findMany({ where: { businessId, saleId }, select: { id: true } });
+  for (const r of returns) {
+    await clearArtifacts(tx, businessId, 'SaleReturn', r.id);
+    await tx.saleReturnItem.deleteMany({ where: { saleReturnId: r.id } });
+  }
+  await tx.saleReturn.deleteMany({ where: { businessId, saleId } });
+
+  await tx.farmerPaymentAllocation.deleteMany({ where: { saleId } });
+  await clearArtifacts(tx, businessId, 'Sale', saleId);
+  await tx.saleItem.deleteMany({ where: { saleId } });
+  await tx.sale.delete({ where: { id: saleId } });
+}
+
+/** Strip one purchase back out of the books, deliveries and returns and all. */
+async function purgePurchase(tx: Tx, businessId: number, purchaseId: number) {
+  const returns = await tx.purchaseReturn.findMany({ where: { businessId, purchaseId }, select: { id: true } });
+  for (const r of returns) {
+    await clearArtifacts(tx, businessId, 'PurchaseReturn', r.id);
+    await tx.purchaseReturnItem.deleteMany({ where: { purchaseReturnId: r.id } });
+  }
+  await tx.purchaseReturn.deleteMany({ where: { businessId, purchaseId } });
+
+  const receipts = await tx.purchaseReceipt.findMany({ where: { businessId, purchaseId }, select: { id: true } });
+  for (const receipt of receipts) {
+    await clearArtifacts(tx, businessId, 'PurchaseReceipt', receipt.id);
+  }
+  await tx.purchaseReceiptItem.deleteMany({ where: { receiptId: { in: receipts.map((r) => r.id) } } });
+  await tx.purchaseReceipt.deleteMany({ where: { businessId, purchaseId } });
+
+  const items = await tx.purchaseItem.findMany({ where: { purchaseId }, select: { batchId: true } });
+  const batchIds = items.map((i) => i.batchId).filter((b): b is number => b !== null);
+
+  await tx.supplierPaymentAllocation.deleteMany({ where: { purchaseId } });
+  await clearArtifacts(tx, businessId, 'Purchase', purchaseId);
+  await tx.purchaseItem.deleteMany({ where: { purchaseId } });
+  if (batchIds.length > 0) await tx.productBatch.deleteMany({ where: { id: { in: batchIds } } });
+  await tx.purchase.delete({ where: { id: purchaseId } });
+}
 
 adminRouter.delete('/farmers/:id', async (req, res, next) => {
   try {
@@ -1056,16 +1107,22 @@ adminRouter.delete('/farmers/:id', async (req, res, next) => {
     await runInTransaction(async (tx) => {
       const farmer = await tx.farmer.findFirst({ where: { id, businessId } });
       if (!farmer) throw AppError.notFound('Farmer not found');
-      const [sales, payments] = await Promise.all([
-        tx.sale.count({ where: { farmerId: id } }),
-        tx.farmerPayment.count({ where: { farmerId: id } }),
-      ]);
-      if (sales > 0 || payments > 0) {
-        throw AppError.badRequest(
-          `${farmer.name} has ${sales} invoice(s) and ${payments} payment(s). Mark them inactive instead of deleting, so their history stays intact.`,
-        );
-      }
       await audit(tx, req, 'Farmer', id, farmer);
+
+      // Payments first: once the invoices are gone there is nothing left to
+      // unallocate them from.
+      const payments = await tx.farmerPayment.findMany({ where: { businessId, farmerId: id }, select: { id: true } });
+      for (const payment of payments) {
+        await tx.farmerPaymentAllocation.deleteMany({ where: { farmerPaymentId: payment.id } });
+        await clearArtifacts(tx, businessId, 'FarmerPayment', payment.id);
+        await tx.farmerPayment.delete({ where: { id: payment.id } });
+      }
+
+      const sales = await tx.sale.findMany({ where: { businessId, farmerId: id }, select: { id: true } });
+      for (const sale of sales) {
+        await purgeSale(tx, businessId, sale.id);
+      }
+
       await tx.ledgerEntry.deleteMany({ where: { businessId, partyType: 'FARMER', farmerId: id } });
       await tx.farmer.delete({ where: { id } });
     });
@@ -1082,16 +1139,40 @@ adminRouter.delete('/suppliers/:id', async (req, res, next) => {
     await runInTransaction(async (tx) => {
       const supplier = await tx.supplier.findFirst({ where: { id, businessId } });
       if (!supplier) throw AppError.notFound('Supplier not found');
-      const [purchases, payments] = await Promise.all([
-        tx.purchase.count({ where: { supplierId: id } }),
-        tx.supplierPayment.count({ where: { supplierId: id } }),
-      ]);
-      if (purchases > 0 || payments > 0) {
-        throw AppError.badRequest(
-          `${supplier.name} has ${purchases} purchase(s) and ${payments} payment(s). Mark them inactive instead of deleting.`,
-        );
+
+      // Goods that left the shelf belong to a farmer's invoice now. Say which
+      // product, so the owner can find the sale rather than guess.
+      const purchases = await tx.purchase.findMany({ where: { businessId, supplierId: id }, select: { id: true } });
+      const batches = await tx.purchaseItem.findMany({
+        where: { purchaseId: { in: purchases.map((p) => p.id) } },
+        select: { batchId: true },
+      });
+      const batchIds = batches.map((b) => b.batchId).filter((b): b is number => b !== null);
+      if (batchIds.length > 0) {
+        const sold = await tx.saleItem.findFirst({
+          where: { batchId: { in: batchIds } },
+          include: { product: { select: { name: true } } },
+        });
+        if (sold) {
+          throw AppError.badRequest(
+            `${sold.product.name} bought from ${supplier.name} has already been sold on, so this supplier cannot be removed without breaking that sale. Delete the sale first, or mark the supplier inactive.`,
+          );
+        }
       }
+
       await audit(tx, req, 'Supplier', id, supplier);
+
+      const payments = await tx.supplierPayment.findMany({ where: { businessId, supplierId: id }, select: { id: true } });
+      for (const payment of payments) {
+        await tx.supplierPaymentAllocation.deleteMany({ where: { supplierPaymentId: payment.id } });
+        await clearArtifacts(tx, businessId, 'SupplierPayment', payment.id);
+        await tx.supplierPayment.delete({ where: { id: payment.id } });
+      }
+
+      for (const purchase of purchases) {
+        await purgePurchase(tx, businessId, purchase.id);
+      }
+
       await tx.ledgerEntry.deleteMany({ where: { businessId, partyType: 'SUPPLIER', supplierId: id } });
       await tx.supplier.delete({ where: { id } });
     });
