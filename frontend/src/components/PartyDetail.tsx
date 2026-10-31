@@ -536,7 +536,7 @@ function PaymentActions({
   return (
     <>
       <EditButton
-        title={`${formatMoney(row.amount)} on ${row.date}`}
+        title={`${formatMoney(row.amount)} on ${formatDate(row.date)}`}
         fields={[
           { key: 'amount', label: 'Amount', type: 'number', step: '0.01', required: true },
           { key: 'paymentDate', label: 'Date', type: 'date', required: true },
@@ -573,7 +573,7 @@ function PaymentActions({
       <DeleteButton
         resource={isFarmer ? 'farmer-payments' : 'supplier-payments'}
         id={row.id}
-        label={`${formatMoney(row.amount)} on ${row.date}`}
+        label={`${formatMoney(row.amount)} on ${formatDate(row.date)}`}
         description="The invoices it settled go back to unpaid, and the money comes out of the account again."
         invalidate={refresh}
       />

@@ -6,6 +6,7 @@ import { LoadingState, ErrorBanner, EmptyState, StatusBadge } from '../component
 import { Modal } from '../components/Modal';
 import type { Account, Farmer, Product } from '../api/types';
 import { ProductPicker } from '../components/ProductPicker';
+import { FarmerPicker } from '../components/FarmerPicker';
 import { DeleteButton } from '../components/DeleteButton';
 import { PaymentStatusFields, type PayStatus } from '../components/PaymentStatusFields';
 import { EditInvoiceButton } from '../components/EditInvoiceButton';
@@ -202,13 +203,42 @@ function NewSaleModal({ onClose, onCreated }: { onClose: () => void; onCreated: 
 
   const productById = useMemo(() => new Map((products ?? []).map((p) => [p.id, p])), [products]);
 
-  const subtotal = items.reduce((sum, it) => {
-    const qty = Number(it.quantity || 0);
-    const price = Number(it.unitPrice || 0);
-    const disc = Number(it.discount || 0);
-    return sum + (qty * price - disc);
-  }, 0);
+  /** What one line comes to, after its own discount. */
+  function lineTotal(it: LineItem): number {
+    return Math.max(0, Number(it.quantity || 0) * Number(it.unitPrice || 0) - Number(it.discount || 0));
+  }
+
+  const subtotal = items.reduce((sum, it) => sum + lineTotal(it), 0);
   const total = Math.max(0, subtotal - Number(discount || 0));
+
+  /**
+   * How much of this product the shelf holds, less what earlier lines on this
+   * same invoice have already claimed. Two lines of the same product were
+   * each checked against the full stock figure, so 10 + 10 looked fine
+   * against 15 until the server rejected the whole invoice.
+   */
+  function shortfallFor(index: number): { stock: number; wanted: number; short: number } | null {
+    const it = items[index];
+    if (it.productId === '') return null;
+    const product = productById.get(Number(it.productId));
+    if (!product || product.currentStock === undefined || product.currentStock === null) return null;
+    const claimedEarlier = items
+      .slice(0, index)
+      .filter((other) => other.productId === it.productId)
+      .reduce((sum, other) => sum + Number(other.quantity || 0), 0);
+    const stock = Number(product.currentStock) - claimedEarlier;
+    const wanted = Number(it.quantity || 0);
+    return { stock, wanted, short: wanted - stock };
+  }
+
+  const overstocked = items
+    .map((_, i) => ({ i, check: shortfallFor(i) }))
+    .filter((row) => row.check && row.check.short > 0);
+
+  // A walk-in has no khata, so an unpaid counter sale is a debt with no name
+  // against it. The server refuses it; saying so here means the shopkeeper
+  // finds out before they have typed the whole invoice.
+  const walkInOnCredit = farmerId === '' && payStatus !== 'PAID';
   // Capped at the total so an over-typed amount can't create a negative balance.
   const paidNow =
     payStatus === 'PAID' ? total : payStatus === 'PARTIAL' ? Math.min(total, Number(initialPaymentAmount || 0)) : 0;
@@ -263,14 +293,11 @@ function NewSaleModal({ onClose, onCreated }: { onClose: () => void; onCreated: 
         <div className="form-grid">
           <div className="field">
             <label>Customer</label>
-            <select value={farmerId} onChange={(e) => setFarmerId(e.target.value ? Number(e.target.value) : '')}>
-              <option value="">Walk-in customer (no account)</option>
-              {(farmers ?? []).map((f: Farmer) => (
-                <option key={f.id} value={f.id}>
-                  {f.name}
-                </option>
-              ))}
-            </select>
+            <FarmerPicker
+              farmers={farmers ?? []}
+              value={farmerId}
+              onChange={(f) => setFarmerId(f?.id ?? '')}
+            />
           </div>
           {!farmerId && (
             <div className="field">
@@ -291,41 +318,83 @@ function NewSaleModal({ onClose, onCreated }: { onClose: () => void; onCreated: 
         </div>
 
         <h4 style={{ marginTop: 16 }}>Items</h4>
-        {items.map((item, i) => (
-          <div key={i} className="form-grid" style={{ marginBottom: 8, gridTemplateColumns: '2fr 1fr 1fr 1fr auto' }}>
-            <div className="field">
-              <label>Product</label>
-              <ProductPicker
-                products={products ?? []}
-                value={item.productId}
-                onChange={(p) => onProductPick(i, p)}
-                required
-              />
+        {items.map((item, i) => {
+          const check = shortfallFor(i);
+          const product = item.productId === '' ? null : productById.get(Number(item.productId));
+          return (
+            <div
+              key={i}
+              className="form-grid line-row"
+              style={{ marginBottom: 8, gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr auto' }}
+            >
+              <div className="field">
+                <label>Product</label>
+                <ProductPicker
+                  products={products ?? []}
+                  value={item.productId}
+                  onChange={(p) => onProductPick(i, p)}
+                  required
+                />
+              </div>
+              <div className="field">
+                <label>Qty</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  value={item.quantity}
+                  onChange={(e) => updateItem(i, { quantity: e.target.value })}
+                  required
+                />
+                {/* The stock figure used to vanish the moment the product was
+                    chosen, which is precisely when it matters. */}
+                {check && (
+                  <span className={`hint${check.short > 0 ? ' hint-danger' : ''}`}>
+                    {check.short > 0
+                      ? `only ${check.stock} ${product?.unit ?? ''} in stock`
+                      : `${check.stock} ${product?.unit ?? ''} in stock`}
+                  </span>
+                )}
+              </div>
+              <div className="field">
+                <label>Unit price</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={item.unitPrice}
+                  onChange={(e) => updateItem(i, { unitPrice: e.target.value })}
+                  required
+                />
+              </div>
+              <div className="field">
+                <label>Discount</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={item.discount}
+                  onChange={(e) => updateItem(i, { discount: e.target.value })}
+                />
+              </div>
+              {/* Read back to the customer without doing the sum in your head. */}
+              <div className="field">
+                <label>Amount</label>
+                <output className="line-amount">{formatMoney(lineTotal(item))}</output>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+                <button
+                  type="button"
+                  className="btn secondary small"
+                  onClick={() => setItems((prev) => prev.filter((_, idx) => idx !== i))}
+                  disabled={items.length === 1}
+                >
+                  Remove
+                </button>
+              </div>
             </div>
-            <div className="field">
-              <label>Qty</label>
-              <input type="number" min="0" step="any" value={item.quantity} onChange={(e) => updateItem(i, { quantity: e.target.value })} required />
-            </div>
-            <div className="field">
-              <label>Unit price</label>
-              <input type="number" min="0" step="0.01" value={item.unitPrice} onChange={(e) => updateItem(i, { unitPrice: e.target.value })} required />
-            </div>
-            <div className="field">
-              <label>Discount</label>
-              <input type="number" min="0" step="0.01" value={item.discount} onChange={(e) => updateItem(i, { discount: e.target.value })} />
-            </div>
-            <div style={{ display: 'flex', alignItems: 'flex-end' }}>
-              <button
-                type="button"
-                className="btn secondary small"
-                onClick={() => setItems((prev) => prev.filter((_, idx) => idx !== i))}
-                disabled={items.length === 1}
-              >
-                Remove
-              </button>
-            </div>
-          </div>
-        ))}
+          );
+        })}
         <button
           type="button"
           className="btn secondary small"
@@ -350,14 +419,39 @@ function NewSaleModal({ onClose, onCreated }: { onClose: () => void; onCreated: 
           accountId={accountId}
           onAccountChange={setAccountId}
           accounts={accounts}
-          partyLabel="Farmer pays"
+          partyLabel={farmerId ? 'Farmer pays' : 'Customer pays'}
         />
+
+        {walkInOnCredit && (
+          <div className="notice-danger" style={{ marginTop: 14 }}>
+            <strong>A walk-in cannot take credit.</strong> There is no khata to record the balance
+            on, so it would never appear in what you are owed. Take the full amount, or search the
+            customer's name above and add them as a farmer.
+          </div>
+        )}
+
+        {overstocked.length > 0 && (
+          <div className="notice-danger" style={{ marginTop: 14 }}>
+            <strong>Not enough stock.</strong>{' '}
+            {overstocked
+              .map((row) => {
+                const product = productById.get(Number(items[row.i].productId));
+                return `${product?.name ?? 'A line'} is ${row.check!.short} ${product?.unit ?? ''} short`;
+              })
+              .join('; ')}
+            . Reduce the quantity, or record the purchase that brought it in first.
+          </div>
+        )}
 
         <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
           <button type="button" className="btn secondary" onClick={onClose}>
             Cancel
           </button>
-          <button type="submit" className="btn" disabled={mutation.isPending}>
+          <button
+            type="submit"
+            className="btn"
+            disabled={mutation.isPending || walkInOnCredit || overstocked.length > 0}
+          >
             {mutation.isPending ? 'Saving…' : 'Save sale'}
           </button>
         </div>

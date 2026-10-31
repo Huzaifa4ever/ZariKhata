@@ -3,7 +3,7 @@ import { Modal } from './Modal';
 import { LoadingState, ErrorBanner } from './StatusBits';
 import { IconPrint } from './icons';
 import * as api from '../api/resources';
-import { formatMoney } from '../lib/format';
+import { formatMoney, formatDate } from '../lib/format';
 import { printInvoiceA4, printInvoiceReceipt } from './PrintInvoice';
 
 /**
@@ -27,7 +27,7 @@ export function InvoiceDetailModal({ invoiceNumber, onClose }: { invoiceNumber: 
           <div className="party-head">
             <div className="party-meta">
               <span>{data.party.name}</span>
-              <span>{data.date}</span>
+              <span>{formatDate(data.date)}</span>
               <span>{data.status}</span>
             </div>
             <div className="btn-row">

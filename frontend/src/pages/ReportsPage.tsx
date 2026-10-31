@@ -14,7 +14,7 @@ import { getBusiness } from '../lib/printBrand';
 import { PartyDetail, type PartyRef, type PartyKind } from '../components/PartyDetail';
 import { InvoiceDetailModal } from '../components/InvoiceDetailModal';
 import { printInvoiceA4, printInvoiceReceipt } from '../components/PrintInvoice';
-import { formatMoney, todayIsoDate, describeBalance } from '../lib/format';
+import { formatMoney, todayIsoDate, describeBalance, formatDate } from '../lib/format';
 import { IconFarmers, IconPrint, IconDownload, IconReports, IconSearch } from '../components/icons';
 
 /* ───────────────────────── period presets ───────────────────────── */
@@ -487,7 +487,7 @@ function InvoiceLookupPanel() {
             <div className="stat-card">
               <div className="label">{data.kind === 'SALE' ? 'Customer' : 'Supplier'}</div>
               <div className="value" style={{ fontSize: 16 }}>{data.party.name}</div>
-              <div className="hint">{data.date}</div>
+              <div className="hint">{formatDate(data.date)}</div>
             </div>
             <div className="stat-card">
               <div className="label">Total</div>

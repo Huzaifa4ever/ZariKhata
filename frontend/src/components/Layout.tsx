@@ -3,6 +3,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { Logo } from './Logo';
 import { ThemeToggle } from './ThemeToggle';
+import { useAdminMode } from '../admin/AdminMode';
 import {
   IconAccounts,
   IconDashboard,
@@ -141,6 +142,7 @@ export function Layout() {
         <header className="topbar">
           <div className="topbar-title">{current?.label ?? 'ZariKhata'}</div>
           <div className="topbar-actions">
+            <AdminModeToggle />
             <ThemeToggle />
             <button className="btn ghost small" onClick={handleLogout}>
               <IconLogout size={15} />
@@ -153,5 +155,37 @@ export function Layout() {
         </main>
       </div>
     </div>
+  );
+}
+
+/**
+ * Admin mode, within reach of the screen you need it on.
+ *
+ * It lived only in Settings, which meant correcting a typo on an invoice was:
+ * leave the page, open Settings, switch on, navigate back, find the row again.
+ * That is enough friction that a wrong number stays wrong. The switch is still
+ * owner-only and still a deliberate act - it is just no longer three screens
+ * away from the thing it applies to.
+ */
+function AdminModeToggle() {
+  const { enabled, available, setEnabled } = useAdminMode();
+  if (!available) return null;
+
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={enabled}
+      className={`btn ghost small admin-pill${enabled ? ' on' : ''}`}
+      onClick={() => setEnabled(!enabled)}
+      title={
+        enabled
+          ? 'Edit and delete buttons are showing. Click to hide them again.'
+          : 'Show edit and delete buttons on records.'
+      }
+    >
+      <span className="admin-dot" aria-hidden="true" />
+      {enabled ? 'Admin on' : 'Admin'}
+    </button>
   );
 }

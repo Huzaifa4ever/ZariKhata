@@ -4059,3 +4059,115 @@ select option {
 .standing-figure.short .sub {
   color: var(--danger-text);
 }
+
+/* ─────────────────── invoice line rows ─────────────────── */
+
+/* What a line comes to, so it can be read back to the customer without
+   anyone doing the arithmetic in their head. */
+.line-amount {
+  display: flex;
+  align-items: center;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* A hint that has turned into a warning - not enough stock on this line. */
+.hint-danger {
+  color: var(--danger-text);
+  font-weight: 600;
+}
+
+@media (max-width: 860px) {
+  .form-grid.line-row {
+    grid-template-columns: 1fr 1fr !important;
+  }
+  .form-grid.line-row > .field:first-child {
+    grid-column: 1 / -1;
+  }
+}
+
+/* ─────────────────── recovery code ───────────────────
+   Shown exactly once, so it has to be unmissable and easy to copy by hand. */
+
+.recovery-reveal {
+  border: 1px solid var(--accent);
+  border-radius: var(--r-lg);
+  background: var(--surface-2);
+  padding: 16px;
+  margin-bottom: 14px;
+}
+
+.recovery-label {
+  font-size: var(--t-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  font-weight: 700;
+  color: var(--danger-text);
+  margin-bottom: 8px;
+}
+
+.recovery-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: clamp(18px, 3.4vw, 26px);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  word-break: break-all;
+  user-select: all;
+  padding: 10px 0;
+}
+
+.recovery-help {
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-3);
+  margin-bottom: 12px;
+}
+
+/* A quiet secondary action under an auth form. */
+.auth-link {
+  display: block;
+  width: 100%;
+  margin-top: 14px;
+  padding: 6px;
+  background: none;
+  border: 0;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text-3);
+  text-align: center;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.auth-link:hover {
+  color: var(--accent);
+}
+
+/* The admin-mode switch in the top bar. Unmistakably "on" when it is on -
+   the whole point is that nobody leaves delete buttons showing by accident. */
+.admin-pill .admin-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-3);
+  display: inline-block;
+}
+
+.admin-pill.on {
+  background: var(--danger-soft);
+  border-color: var(--danger);
+  color: var(--danger-text);
+  font-weight: 650;
+}
+
+.admin-pill.on .admin-dot {
+  background: var(--danger);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 22%, transparent);
+}

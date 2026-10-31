@@ -166,6 +166,14 @@ export const createAccount = (data: { name: string; type: string; openingBalance
 export const getAccountStatement = (id: number, params: { from?: string; to?: string } = {}) =>
   apiRequest<AccountStatement>(`/api/reports/account-statement/${id}`, { query: params });
 
+// --- owner password recovery ---
+export const getRecoveryCodeStatus = () =>
+  apiRequest<{ configured: boolean; setAt: string | null }>('/api/auth/recovery-code');
+export const issueRecoveryCode = (password: string) =>
+  apiRequest<{ code: string }>('/api/auth/recovery-code', { method: 'POST', body: { password } });
+export const recoverPassword = (data: { username: string; code: string; newPassword: string }) =>
+  apiRequest<{ ok: true }>('/api/auth/recover', { method: 'POST', body: data });
+
 // --- tasks ---
 export const listTasks = (filters: Record<string, string | number | undefined> = {}) =>
   apiRequest<Task[]>('/api/tasks', { query: filters });

@@ -18,7 +18,7 @@ import { LoadingState, ErrorBanner, EmptyState } from '../components/StatusBits'
 import { IconPrint, IconPayOut } from '../components/icons';
 import { ApiError } from '../api/client';
 import * as api from '../api/resources';
-import { formatMoney, todayIsoDate } from '../lib/format';
+import { formatMoney, todayIsoDate, formatDate } from '../lib/format';
 import { printPaymentReceipt } from '../components/PrintInvoice';
 import { printReport } from '../components/PrintReport';
 import { getBusiness } from '../lib/printBrand';
@@ -524,7 +524,7 @@ function AdvanceModal({ row, onClose }: { row: api.PayrollRow; onClose: () => vo
               <tbody>
                 {history.rows.map((a) => (
                   <tr key={a.id}>
-                    <td className="cell-muted">{a.date}</td>
+                    <td className="cell-muted">{formatDate(a.date)}</td>
                     <td className="text-right">{formatMoney(a.amount)}</td>
                     <td>{a.account}</td>
                     <td>{a.notes || '-'}</td>

@@ -2,10 +2,13 @@ import type { ReactNode } from 'react';
 import { Logo, LogoLockup } from './Logo';
 import { ThemeToggle } from './ThemeToggle';
 
+// Say what is actually true. This ran on a claim of "no internet needed"
+// while talking to a server over the internet, which is the kind of thing a
+// shopkeeper only finds out when they are somewhere with no signal.
 const POINTS = [
   'Stock, batches and expiry dates, tracked per product',
   'Farmer credit and supplier payables, always reconciled',
-  'Everything stays on this computer - no internet needed',
+  'Open the same books from the counter, the office or your phone',
 ];
 
 function Check() {
@@ -44,7 +47,7 @@ export function AuthLayout({ children }: { children: ReactNode }) {
             ))}
           </ul>
         </div>
-        <div className="auth-foot">Runs offline on this PC · Your data never leaves it</div>
+        <div className="auth-foot">Your own private server · Backed up every night</div>
       </section>
 
       <section className="auth-panel">

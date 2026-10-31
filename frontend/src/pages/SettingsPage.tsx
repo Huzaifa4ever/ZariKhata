@@ -5,6 +5,8 @@ import { LoadingState, ErrorBanner } from '../components/StatusBits';
 import { useAdminMode } from '../admin/AdminMode';
 import { Logo } from '../components/Logo';
 import { IconAlert } from '../components/icons';
+import { ApiError } from '../api/client';
+import { formatDate } from '../lib/format';
 
 export function SettingsPage() {
   const qc = useQueryClient();
@@ -130,6 +132,7 @@ export function SettingsPage() {
 
       <div className="settings-col">
         <AdminModeCard />
+        <RecoveryCodeCard />
         <PrintingCard business={data} />
       </div>
       </div>
@@ -286,7 +289,8 @@ function AdminModeCard() {
           <p className="muted" style={{ margin: 0 }}>
             Turn this on to show edit and delete buttons on expenses, invoices, payments, deliveries,
             farmers, suppliers, products and users. Only an owner can correct or remove a record -
-            staff record new ones. It switches itself off every time ZariKhata restarts.
+            staff record new ones. It stays on while this browser is open and clears when you close
+            it or sign out.
           </p>
         </div>
         <button
@@ -309,6 +313,133 @@ function AdminModeCard() {
             deleted, and you will be told why.
           </span>
         </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The owner's way back in if they forget their password.
+ *
+ * There is no email on this system and nobody above the owner to ask, so
+ * without this a forgotten password locks the business out of its own books
+ * permanently. The code is shown once, here, and never again - it is stored
+ * only as a hash, exactly like a password, so not even the server can read it
+ * back.
+ */
+function RecoveryCodeCard() {
+  const { available } = useAdminMode();
+  const [password, setPassword] = useState('');
+  const [code, setCode] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [asking, setAsking] = useState(false);
+
+  const status = useQuery({
+    queryKey: ['recovery-code'],
+    queryFn: api.getRecoveryCodeStatus,
+    enabled: available,
+  });
+
+  const issue = useMutation({
+    mutationFn: () => api.issueRecoveryCode(password),
+    onSuccess: (result) => {
+      setCode(result.code);
+      setPassword('');
+      setAsking(false);
+      status.refetch();
+    },
+    onError: (e) => setError(e instanceof ApiError ? e.message : 'Could not create a recovery code.'),
+  });
+
+  if (!available) return null;
+
+  const configured = status.data?.configured ?? false;
+
+  return (
+    <div className="card" style={{ marginTop: 20 }}>
+      <h3 style={{ marginTop: 0, marginBottom: 4 }}>If you forget your password</h3>
+      <p className="muted" style={{ marginTop: 0 }}>
+        A recovery code lets you back in without your password. Nobody can reset it for you - there
+        is no one above the owner on this system - so keep the code the way you keep the shop keys.
+      </p>
+
+      {!configured && !code && (
+        <div className="notice-danger" style={{ marginBottom: 12 }}>
+          <strong>You have no recovery code.</strong> If you forget your password today, the books
+          cannot be opened again. This takes a minute.
+        </div>
+      )}
+
+      {configured && !code && (
+        <p className="muted-3" style={{ fontSize: 13 }}>
+          A code was created on {formatDate(status.data?.setAt)}. It works once. Creating a new one
+          cancels it.
+        </p>
+      )}
+
+      {code && (
+        <div className="recovery-reveal">
+          <div className="recovery-label">Write this down now - it will not be shown again</div>
+          <div className="recovery-code">{code}</div>
+          <div className="recovery-help">
+            Keep it somewhere you would keep a spare key - the cash box, or a photo on your phone.
+            Anyone holding it can take over this account, and using it signs out everyone else.
+          </div>
+          <button type="button" className="btn secondary small" onClick={() => setCode(null)}>
+            I have written it down
+          </button>
+        </div>
+      )}
+
+      {error && <ErrorBanner message={error} />}
+
+      {!code && !asking && (
+        <button type="button" className="btn secondary" onClick={() => setAsking(true)}>
+          {configured ? 'Create a new code' : 'Create a recovery code'}
+        </button>
+      )}
+
+      {!code && asking && (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            setError(null);
+            issue.mutate();
+          }}
+        >
+          <div className="field" style={{ maxWidth: 320 }}>
+            <label htmlFor="recovery-pw">Confirm your password</label>
+            <input
+              id="recovery-pw"
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              autoFocus
+            />
+            <span className="hint">
+              Asked because this code can bypass your password - an unattended counter should not be
+              enough to walk away with one.
+            </span>
+          </div>
+          <div className="btn-row" style={{ marginTop: 10 }}>
+            <button
+              type="button"
+              className="btn secondary"
+              onClick={() => {
+                setAsking(false);
+                setPassword('');
+                setError(null);
+              }}
+            >
+              Cancel
+            </button>
+            <button type="submit" className="btn" disabled={issue.isPending || !password}>
+              {issue.isPending ? 'Creating…' : 'Show my code'}
+            </button>
+          </div>
+        </form>
       )}
     </div>
   );
@@ -341,8 +472,8 @@ function PrintingCard({ business }: { business: ReturnType<typeof api.getBusines
 
       <ul className="list-plain" style={{ marginTop: 14 }}>
         <li>
-          <strong>Receipts</strong> print to an 80mm or 58mm thermal roll - pick the width on the Biller
-          page.
+          <strong>Receipts</strong> print to an 80mm or 58mm thermal roll. Pick the width from the
+          Print button on any sale - this browser remembers whichever you used last.
         </li>
         <li>
           <strong>Reports and statements</strong> print A4. Use your printer dialog's "Save as PDF" to

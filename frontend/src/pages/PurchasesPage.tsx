@@ -241,12 +241,12 @@ function NewPurchaseModal({ onClose, onCreated }: { onClose: () => void; onCreat
     setItems((prev) => prev.map((it, i) => (i === index ? { ...it, ...patch } : it)));
   }
 
-  const total = items.reduce((sum, it) => {
-    const qty = Number(it.quantity || 0);
-    const cost = Number(it.unitCost || 0);
-    const disc = Number(it.discount || 0);
-    return sum + (qty * cost - disc);
-  }, 0) - Number(discount || 0);
+  /** What one line comes to, after its own discount. */
+  function lineTotal(it: LineItem): number {
+    return Math.max(0, Number(it.quantity || 0) * Number(it.unitCost || 0) - Number(it.discount || 0));
+  }
+
+  const total = items.reduce((sum, it) => sum + lineTotal(it), 0) - Number(discount || 0);
 
   // Capped at the total so an over-typed amount can't create a negative balance.
   const paidNow =
@@ -354,7 +354,11 @@ function NewPurchaseModal({ onClose, onCreated }: { onClose: () => void; onCreat
 
         <h4 style={{ marginTop: 16 }}>Items</h4>
         {items.map((item, i) => (
-          <div key={i} className="form-grid" style={{ marginBottom: 8, gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr auto' }}>
+          <div
+            key={i}
+            className="form-grid line-row"
+            style={{ marginBottom: 8, gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 1fr auto' }}
+          >
             <div className="field">
               <label>Product</label>
               <ProductPicker
@@ -387,6 +391,10 @@ function NewPurchaseModal({ onClose, onCreated }: { onClose: () => void; onCreat
             <div className="field">
               <label>Expiry (optional)</label>
               <input type="date" value={item.expiryDate} onChange={(e) => updateItem(i, { expiryDate: e.target.value })} />
+            </div>
+            <div className="field">
+              <label>Amount</label>
+              <output className="line-amount">{formatMoney(lineTotal(item))}</output>
             </div>
             <div style={{ display: 'flex', alignItems: 'flex-end' }}>
               <button
